@@ -1,0 +1,45 @@
+<?php
+
+namespace {{ namespace }};
+
+use LaravelAIAgent\Agent;
+
+class {{ class }} extends Agent
+{
+    /**
+     * The agent name.
+     */
+    protected string $name = '{{ class }}';
+
+    /**
+     * The system prompt for this agent.
+     */
+    protected ?string $systemPrompt = <<<PROMPT
+        You are a helpful AI assistant.
+        Respond in a friendly and professional manner.
+    PROMPT;
+
+    /**
+     * Tool classes this agent can use.
+     * Example: [\App\Services\OrderService::class]
+     */
+    protected array $toolClasses = [
+        // Add your tool classes here
+    ];
+
+    /**
+     * Boot the agent.
+     */
+    public function __construct()
+    {
+        parent::__construct($this->name);
+
+        if ($this->systemPrompt) {
+            $this->system($this->systemPrompt);
+        }
+
+        if (!empty($this->toolClasses)) {
+            $this->tools($this->toolClasses);
+        }
+    }
+}

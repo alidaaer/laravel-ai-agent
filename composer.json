@@ -1,0 +1,57 @@
+{
+    "name": "alidaaer/laravel-ai-agent",
+    "description": "Give your Laravel app a brain, safely. Build AI Agents that can execute real actions in your application.",
+    "keywords": [
+        "laravel",
+        "ai",
+        "agent",
+        "openai",
+        "anthropic",
+        "llm",
+        "tools",
+        "function-calling"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Ali Daaer",
+            "homepage": "https://github.com/alidaaer"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^10.0|^11.0|^12.0",
+        "illuminate/http": "^10.0|^11.0|^12.0",
+        "illuminate/validation": "^10.0|^11.0|^12.0",
+        "illuminate/cache": "^10.0|^11.0|^12.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "phpunit/phpunit": "^10.0|^11.0"
+    },
+    "autoload": {
+        "files": [
+            "src/helpers.php"
+        ],
+        "psr-4": {
+            "LaravelAIAgent\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "LaravelAIAgent\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "LaravelAIAgent\\AgentServiceProvider"
+            ],
+            "aliases": {
+                "Agent": "LaravelAIAgent\\Facades\\Agent"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
