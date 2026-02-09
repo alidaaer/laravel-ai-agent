@@ -34,6 +34,7 @@
 | 💾 **Memory** | Conversations are automatically remembered |
 | 📊 **Markdown Responses** | Tables, formatting, and rich text in chat |
 | ⚡ **Smart Returns** | `view()`, `redirect()`, `Model` — AI understands them all |
+| 🤖 **Multi-Agent** | Multiple agents with per-method access control from config |
 | 🎯 **Laravel Native** | Feels like part of the framework |
 
 ---
@@ -330,6 +331,71 @@ Agent::driver('ollama')->chat("Hello");
 // Specific model
 Agent::driver('gemini')->model('gemini-2.5-pro')->chat("Hello");
 ```
+
+---
+
+## 🤖 Multi-Agent System
+
+Define multiple agents with isolated tools and permissions — **all from config**.
+
+### 1. Define Agents
+
+```php
+// config/ai-agent.php
+'agents' => [
+    'shop' => [
+        'system_prompt' => 'You are a helpful shop assistant',
+        'middleware' => ['api', 'auth'],
+    ],
+    'admin' => [
+        'system_prompt' => 'You are an admin assistant with full access',
+        'middleware' => ['api', 'auth', 'admin'],
+    ],
+],
+```
+
+### 2. Scope Tools Per-Method
+
+```php
+class OrderService
+{
+    #[AsAITool('List orders')]              // All agents see this
+    public function listOrders() {}
+
+    #[AsAITool('Delete order', agents: ['admin'])]   // Admin only
+    public function deleteOrder(int $id) {}
+
+    #[AsAITool('Advanced stats', agents: ['admin'])]  // Admin only
+    public function advancedStats() {}
+}
+```
+
+**Rule:** No `agents` param = available to all agents. Explicit list = restricted.
+
+### 3. Auto-Generated Endpoints
+
+Each agent gets its own route automatically:
+
+```
+POST /ai-agent/shop/chat   → sees: listOrders
+POST /ai-agent/admin/chat  → sees: listOrders, deleteOrder, advancedStats
+```
+
+### 4. Connect Widget
+
+```html
+<ai-agent-chat endpoint="/ai-agent/shop/chat"></ai-agent-chat>   <!-- Customer -->
+<ai-agent-chat endpoint="/ai-agent/admin/chat"></ai-agent-chat>   <!-- Admin -->
+```
+
+### 5. Programmatic Usage
+
+```php
+Agent::agent('shop')->conversation($id)->chat('Show my orders');
+Agent::agent('admin')->chat('Delete order 5');
+```
+
+> **Zero agents config?** Everything works like before — single agent, all tools discovered automatically.
 
 ---
 

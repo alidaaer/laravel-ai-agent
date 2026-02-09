@@ -14,7 +14,7 @@
 class AIAgentChat extends HTMLElement {
     static get observedAttributes() {
         return [
-            'endpoint', 'theme', 'position', 'width', 'height',
+            'endpoint', 'history-endpoint', 'theme', 'position', 'width', 'height',
             'rtl', 'welcome-message', 'placeholder', 'title', 'subtitle',
             'primary-color', 'open', 'button-icon', 'button-size'
         ];
@@ -44,29 +44,36 @@ class AIAgentChat extends HTMLElement {
             this.open();
         }
 
-        // Welcome message only if no messages loaded
-        const welcomeMsg = this.getAttribute('welcome-message');
-        if (welcomeMsg && this.messages.length === 0) {
-            this.addMessage(welcomeMsg, 'bot');
+        // Load history from server, then show welcome if empty
+        if (this.hasAttribute('persist-messages')) {
+            this.loadHistoryFromServer().then(() => {
+                if (this.messages.length === 0) {
+                    const welcomeMsg = this.getAttribute('welcome-message');
+                    if (welcomeMsg) this.addMessage(welcomeMsg, 'bot');
+                }
+            });
+        } else {
+            const welcomeMsg = this.getAttribute('welcome-message');
+            if (welcomeMsg && this.messages.length === 0) {
+                this.addMessage(welcomeMsg, 'bot');
+            }
         }
     }
 
     /**
-     * Synchronously load messages from localStorage (before render)
+     * Synchronously restore conversationId from localStorage (before render)
      */
     loadMessagesSync() {
         if (!this.hasAttribute('persist-messages')) return;
 
         try {
-            const key = `ai_agent_chat_${(this.getAttribute('endpoint') || '/api/chat').replace(/[^a-z0-9]/gi, '_')}`;
-            const saved = localStorage.getItem(key);
-            if (saved) {
-                const data = JSON.parse(saved);
-                this.messages = data.messages || [];
-                this.conversationId = data.conversationId || this.conversationId;
+            const key = this.getConversationKey();
+            const savedId = localStorage.getItem(key);
+            if (savedId) {
+                this.conversationId = savedId;
             }
         } catch (e) {
-            console.warn('AI Agent: Failed to load messages', e);
+            console.warn('AI Agent: Failed to restore conversation ID', e);
         }
     }
 
@@ -99,52 +106,88 @@ class AIAgentChat extends HTMLElement {
             buttonIcon: this.getAttribute('button-icon') || '💬',
             buttonSize: this.getAttribute('button-size') || '60px',
             persistMessages: this.hasAttribute('persist-messages'),
+            historyEndpoint: this.getAttribute('history-endpoint') || null,
         };
     }
 
     // ================================
-    // Message Persistence (localStorage)
+    // Message Persistence (Server-side)
     // ================================
 
-    getStorageKey() {
-        return `ai_agent_chat_${this.config.endpoint.replace(/[^a-z0-9]/gi, '_')}`;
+    getConversationKey() {
+        return `ai_agent_cid_${this.config.endpoint.replace(/[^a-z0-9]/gi, '_')}`;
     }
 
-    loadMessages() {
-        if (!this.config.persistMessages) return;
+    getHistoryEndpoint() {
+        // 1. Explicit attribute takes priority
+        if (this.config.historyEndpoint) {
+            return this.config.historyEndpoint;
+        }
+        // 2. Derive from chat endpoint: /ai-agent/chat → /ai-agent/history
+        const endpoint = this.config.endpoint;
+        if (endpoint.endsWith('/chat')) {
+            return endpoint.replace(/\/chat$/, '/history');
+        }
+        return endpoint + '/history';
+    }
 
+    async loadHistoryFromServer() {
         try {
-            const saved = localStorage.getItem(this.getStorageKey());
-            if (saved) {
-                const data = JSON.parse(saved);
-                this.messages = data.messages || [];
-                this.conversationId = data.conversationId || this.conversationId;
+            const headers = { 'Accept': 'application/json' };
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            if (csrfToken) headers['X-CSRF-TOKEN'] = csrfToken;
+
+            const url = `${this.getHistoryEndpoint()}?conversation_id=${encodeURIComponent(this.conversationId)}`;
+            const response = await fetch(url, { headers, credentials: 'same-origin' });
+
+            if (!response.ok) return;
+
+            const data = await response.json();
+            if (data.success && data.messages && data.messages.length > 0) {
+                this.messages = data.messages.map(msg => ({
+                    content: msg.content,
+                    role: msg.role === 'assistant' ? 'bot' : 'user',
+                    time: ''
+                }));
                 this.updateMessagesUI();
             }
         } catch (e) {
-            console.warn('AI Agent: Failed to load messages', e);
+            console.warn('AI Agent: Failed to load history from server', e);
         }
     }
 
     saveMessages() {
+        // Save only conversationId to localStorage (messages are on the server)
         if (!this.config.persistMessages) return;
-
         try {
-            const data = {
-                messages: this.messages,
-                conversationId: this.conversationId,
-                savedAt: new Date().toISOString()
-            };
-            localStorage.setItem(this.getStorageKey(), JSON.stringify(data));
+            localStorage.setItem(this.getConversationKey(), this.conversationId);
         } catch (e) {
-            console.warn('AI Agent: Failed to save messages', e);
+            console.warn('AI Agent: Failed to save conversation ID', e);
         }
     }
 
-    clearMessages() {
+    async clearMessages() {
         this.messages = [];
+
+        // Clear on server
+        try {
+            const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            if (csrfToken) headers['X-CSRF-TOKEN'] = csrfToken;
+
+            await fetch(this.getHistoryEndpoint(), {
+                method: 'DELETE',
+                headers,
+                credentials: 'same-origin',
+                body: JSON.stringify({ conversation_id: this.conversationId }),
+            });
+        } catch (e) {
+            console.warn('AI Agent: Failed to clear server history', e);
+        }
+
+        // Reset conversation
         this.conversationId = this.generateId();
-        localStorage.removeItem(this.getStorageKey());
+        localStorage.removeItem(this.getConversationKey());
         this.updateMessagesUI();
     }
 
@@ -952,53 +995,6 @@ class AIAgentChat extends HTMLElement {
             const container = this.shadowRoot.querySelector('.widget-messages');
             container.scrollTop = container.scrollHeight;
         }
-    }
-
-    // ================================
-    // Storage
-    // ================================
-
-    getStorageKey() {
-        // Use endpoint as stable key (not conversationId which changes on refresh)
-        return `ai_agent_chat_${this.config.endpoint.replace(/[^a-z0-9]/gi, '_')}`;
-    }
-
-    saveMessages() {
-        if (!this.config.persistMessages) return;
-
-        try {
-            const data = {
-                messages: this.messages,
-                conversationId: this.conversationId,
-                savedAt: new Date().toISOString()
-            };
-            localStorage.setItem(this.getStorageKey(), JSON.stringify(data));
-        } catch (e) {
-            console.warn('AI Agent: Failed to save messages', e);
-        }
-    }
-
-    loadMessages() {
-        if (!this.config.persistMessages) return;
-
-        try {
-            const stored = localStorage.getItem(this.getStorageKey());
-            if (stored) {
-                const data = JSON.parse(stored);
-                this.messages = data.messages || [];
-                // Restore the same conversationId so server-side memory matches
-                this.conversationId = data.conversationId || this.conversationId;
-            }
-        } catch (e) {
-            console.warn('AI Agent: Failed to load messages', e);
-        }
-    }
-
-    clearMessages() {
-        this.messages = [];
-        this.conversationId = this.generateId();
-        localStorage.removeItem(this.getStorageKey());
-        this.updateMessages();
     }
 
     // ================================

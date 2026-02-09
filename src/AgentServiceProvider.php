@@ -98,12 +98,37 @@ class AgentServiceProvider extends ServiceProvider
             $this->loadRoutesFrom(__DIR__ . '/../routes/widget.php');
         }
 
+        // Register agent routes
+        $this->registerAgentRoutes();
+
         // Register commands
         if ($this->app->runningInConsole()) {
             $this->commands([
                 Console\ChatCommand::class,
                 Console\MakeAgentCommand::class,
             ]);
+        }
+    }
+
+    /**
+     * Register routes for each configured agent.
+     */
+    protected function registerAgentRoutes(): void
+    {
+        $agents = config('ai-agent.agents', []);
+
+        if (empty($agents)) {
+            return;
+        }
+
+        foreach ($agents as $agentName => $agentConfig) {
+            \Illuminate\Support\Facades\Route::middleware($agentConfig['middleware'] ?? ['api'])
+                ->prefix($agentConfig['prefix'] ?? 'ai-agent')
+                ->group(function () use ($agentName) {
+                    \Illuminate\Support\Facades\Route::post("/{$agentName}/chat", [Http\Controllers\ChatController::class, 'agentChat'])
+                        ->name("ai-agent.{$agentName}.chat")
+                        ->defaults('agent', $agentName);
+                });
         }
     }
 }

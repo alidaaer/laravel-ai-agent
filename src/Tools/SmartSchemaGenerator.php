@@ -266,6 +266,7 @@ class SmartSchemaGenerator
             'requires_confirmation' => $attr->requiresConfirmation,
             'permission' => $attr->permission,
             'examples' => $attr->examples,
+            'agents' => $attr->agents,
             'parameters' => $parameters,
             'schema' => $schema,
         ];

@@ -74,6 +74,35 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | AI Agents
+    |--------------------------------------------------------------------------
+    |
+    | Define multiple AI agents, each with its own endpoint, system prompt,
+    | and middleware. Tools are scoped per-method using the `agents` parameter
+    | in #[AsAITool]. Leave empty to use the default single-agent behavior.
+    |
+    | Each agent automatically gets: POST /{prefix}/{agent}/chat
+    |
+    */
+    'agents' => [
+        // 'shop' => [
+        //     'driver' => null,                    // null = use default driver
+        //     'model' => null,                     // null = use driver's default model
+        //     'system_prompt' => 'You are a helpful shop assistant',
+        //     'middleware' => ['api'],
+        //     'prefix' => 'ai-agent',              // URL prefix
+        // ],
+        // 'admin' => [
+        //     'driver' => null,
+        //     'model' => null,
+        //     'system_prompt' => 'You are an admin assistant with full access',
+        //     'middleware' => ['api', 'auth', 'admin'],
+        //     'prefix' => 'ai-agent',
+        // ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Tool Discovery
     |--------------------------------------------------------------------------
     |

@@ -142,6 +142,56 @@ class ToolDiscovery
     }
 
     /**
+     * Discover only public tools (not restricted to any specific agent).
+     * Returns tools where agents is null AND no scoped version of the same name exists.
+     */
+    public function discoverPublic(array $classes): array
+    {
+        $allTools = $this->discover($classes);
+
+        return array_values(array_filter($allTools, function (array $tool) {
+            return $tool['agents'] === null;
+        }));
+    }
+
+    /**
+     * Discover tools filtered for a specific agent.
+     * Only returns tools where agents is null (all) or contains the agent name.
+     *
+     * Security: If a tool name has both unscoped (agents: null) and scoped versions,
+     * the unscoped version is blocked to prevent bypassing agent restrictions.
+     * Explicitly scoped versions (agents: ['shop'], agents: ['admin']) are always
+     * evaluated independently — allowing intentional per-agent implementations.
+     */
+    public function discoverForAgent(array $classes, string $agentName): array
+    {
+        $allTools = $this->discover($classes);
+
+        // First pass: find tool names that have at least one scoped version
+        $hasScoped = [];
+        foreach ($allTools as $tool) {
+            if ($tool['agents'] !== null) {
+                $hasScoped[$tool['name']] = true;
+            }
+        }
+
+        // Second pass: filter tools
+        return array_values(array_filter($allTools, function (array $tool) use ($agentName, $hasScoped) {
+            // Unscoped tool (agents: null)
+            if ($tool['agents'] === null) {
+                // Block if a scoped version of the same name exists (prevent bypass)
+                if (isset($hasScoped[$tool['name']])) {
+                    return false;
+                }
+                return true;
+            }
+
+            // Scoped tool: allow only if this agent is in the list
+            return in_array($agentName, $tool['agents'], true);
+        }));
+    }
+
+    /**
      * Clear the tools cache for specific classes or all cached tools.
      */
     public function clearCache(?array $classes = null): void

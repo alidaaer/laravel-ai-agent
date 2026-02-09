@@ -29,6 +29,7 @@ class Agent
     
     protected string $conversationId;
     protected ?string $systemPrompt = null;
+    protected ?string $agentScope = null;
     protected array $context = [];
     protected array $options = [];
     protected int $maxIterations = 10;
@@ -41,7 +42,7 @@ class Agent
         return new self($name);
     }
 
-    public function __construct(string $name = 'Agent')
+    public function __construct(string $name = 'Agent', bool $skipAutoDiscovery = false)
     {
         $this->name = $name;
         $this->conversationId = (string) Str::uuid();
@@ -49,8 +50,8 @@ class Agent
         $this->toolDiscovery = new ToolDiscovery();
         $this->toolExecutor = new ToolExecutor($this->toolRegistry, new ToolValidator());
         
-        // Auto-discover tools if enabled
-        if (config('ai-agent.discovery.enabled', true)) {
+        // Auto-discover tools if enabled (skip when agentScope will re-discover)
+        if (!$skipAutoDiscovery && config('ai-agent.discovery.enabled', true)) {
             $this->autoDiscoverTools();
         }
     }
@@ -84,12 +85,23 @@ class Agent
 
     /**
      * Allow specific tool classes.
+     * If agentScope is set, only tools allowed for that agent will be registered.
      */
     public function tools(array $classes): self
     {
-        $tools = $this->toolDiscovery->discover($classes);
+        $tools = $this->agentScope
+            ? $this->toolDiscovery->discoverForAgent($classes, $this->agentScope)
+            : $this->toolDiscovery->discoverPublic($classes);
         $this->toolRegistry->register($tools);
         return $this;
+    }
+
+    /**
+     * Get registered tool names (for debugging).
+     */
+    public function getRegisteredToolNames(): array
+    {
+        return $this->toolRegistry->names();
     }
 
     /**
@@ -98,6 +110,18 @@ class Agent
     public function withoutTools(): self
     {
         $this->toolRegistry->clear();
+        return $this;
+    }
+
+    /**
+     * Scope tools to a specific agent.
+     * Only tools with matching agents param (or null) will be available.
+     */
+    public function agentScope(string $agentName): self
+    {
+        $this->agentScope = $agentName;
+        $this->toolRegistry->clear();
+        $this->autoDiscoverToolsForAgent($agentName);
         return $this;
     }
 
@@ -421,9 +445,10 @@ class Agent
     /**
      * Resolve memory driver by name.
      */
-    protected function resolveMemory(string $name): MemoryInterface
+    public static function resolveMemory(string $name): MemoryInterface
     {
         return match ($name) {
+            'database' => new Memory\DatabaseMemory(),
             'session' => new SessionMemory(),
             'null' => new Memory\NullMemory(),
             default => new SessionMemory(),
@@ -436,6 +461,35 @@ class Agent
     protected function autoDiscoverTools(): void
     {
         $paths = config('ai-agent.discovery.paths', []);
+        $classes = $this->findClassesInPaths($paths);
+
+        if (!empty($classes)) {
+            $tools = $this->agentScope
+                ? $this->toolDiscovery->discoverForAgent($classes, $this->agentScope)
+                : $this->toolDiscovery->discoverPublic($classes);
+            $this->toolRegistry->register($tools);
+        }
+    }
+
+    /**
+     * Auto-discover tools filtered for a specific agent.
+     */
+    protected function autoDiscoverToolsForAgent(string $agentName): void
+    {
+        $paths = config('ai-agent.discovery.paths', []);
+        $classes = $this->findClassesInPaths($paths);
+
+        if (!empty($classes)) {
+            $tools = $this->toolDiscovery->discoverForAgent($classes, $agentName);
+            $this->toolRegistry->register($tools);
+        }
+    }
+
+    /**
+     * Find all PHP classes in configured paths.
+     */
+    protected function findClassesInPaths(array $paths): array
+    {
         $classes = [];
 
         foreach ($paths as $path) {
@@ -444,10 +498,7 @@ class Agent
             }
         }
 
-        if (!empty($classes)) {
-            $tools = $this->toolDiscovery->discover($classes);
-            $this->toolRegistry->register($tools);
-        }
+        return $classes;
     }
 
     /**

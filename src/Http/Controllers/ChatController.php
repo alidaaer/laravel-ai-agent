@@ -54,6 +54,118 @@ class ChatController extends Controller
     }
 
     /**
+     * Handle chat message for a specific agent.
+     */
+    public function agentChat(Request $request, string $agent)
+    {
+        $config = config("ai-agent.agents.{$agent}");
+
+        if (!$config) {
+            return response()->json([
+                'success' => false,
+                'error' => "Agent '{$agent}' not configured.",
+            ], 404);
+        }
+
+        $request->validate([
+            'message' => 'required|string|max:5000',
+            'conversation_id' => 'nullable|string|max:100',
+        ]);
+
+        try {
+            $conversationId = $request->input('conversation_id', session()->getId());
+
+            $agentInstance = new \LaravelAIAgent\Agent($agent, skipAutoDiscovery: true);
+            $agentInstance->driver($config['driver'] ?? config('ai-agent.default'))
+                ->conversation($conversationId)
+                ->system($config['system_prompt'] ?? 'You are a helpful AI assistant.')
+                ->agentScope($agent);
+
+            if (!empty($config['model'])) {
+                $agentInstance->model($config['model']);
+            }
+
+            $response = $agentInstance->chat($request->input('message'));
+
+            return response()->json([
+                'success' => true,
+                'response' => $response,
+                'conversation_id' => $conversationId,
+            ]);
+        } catch (\LaravelAIAgent\Exceptions\DriverException $e) {
+            $statusCode = $e->getHttpCode();
+            $message = match ($statusCode) {
+                429 => 'Rate limit exceeded. Please try again later.',
+                401 => 'Authentication failed. Please check your API configuration.',
+                403 => 'Access denied. Please verify your API permissions.',
+                default => config('app.debug') ? $e->getMessage() : 'An error occurred while processing your request.',
+            };
+
+            return response()->json([
+                'success' => false,
+                'error' => $message,
+            ], 500);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => config('app.debug') ? $e->getMessage() : 'An error occurred',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get conversation history for the widget.
+     * Returns only user/assistant messages (no tool calls).
+     */
+    public function history(Request $request)
+    {
+        $conversationId = $request->query('conversation_id', session()->getId());
+
+        try {
+            $memory = \LaravelAIAgent\Agent::resolveMemory(config('ai-agent.memory.driver', 'session'));
+            $messages = $memory->recall($conversationId);
+
+            // Filter: only user and assistant messages for display
+            $filtered = array_values(array_filter($messages, function ($msg) {
+                return in_array($msg['role'], ['user', 'assistant']);
+            }));
+
+            return response()->json([
+                'success' => true,
+                'conversation_id' => $conversationId,
+                'messages' => $filtered,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => config('app.debug') ? $e->getMessage() : 'Failed to load history',
+            ], 500);
+        }
+    }
+
+    /**
+     * Clear conversation history.
+     */
+    public function clear(Request $request)
+    {
+        $conversationId = $request->input('conversation_id', session()->getId());
+
+        try {
+            $memory = \LaravelAIAgent\Agent::resolveMemory(config('ai-agent.memory.driver', 'session'));
+            $memory->forget($conversationId);
+
+            return response()->json([
+                'success' => true,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => config('app.debug') ? $e->getMessage() : 'Failed to clear history',
+            ], 500);
+        }
+    }
+
+    /**
      * Serve the widget JavaScript.
      */
     public function widget()

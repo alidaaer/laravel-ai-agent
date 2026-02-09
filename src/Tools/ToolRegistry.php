@@ -8,11 +8,24 @@ class ToolRegistry
 
     /**
      * Register tools from discovery.
+     * If a tool with the same name already exists, the more restrictive one wins
+     * (the one with agents specified takes priority over the unscoped one).
      */
     public function register(array $tools): void
     {
         foreach ($tools as $tool) {
-            $this->tools[$tool['name']] = $tool;
+            $name = $tool['name'];
+
+            if (isset($this->tools[$name])) {
+                $existing = $this->tools[$name];
+
+                // If existing tool has agents restriction, keep it (more restrictive wins)
+                if ($existing['agents'] !== null && $tool['agents'] === null) {
+                    continue;
+                }
+            }
+
+            $this->tools[$name] = $tool;
         }
     }
 

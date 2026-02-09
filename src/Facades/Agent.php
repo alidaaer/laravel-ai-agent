@@ -31,6 +31,25 @@ class Agent extends Facade
     }
 
     /**
+     * Create an agent instance from config by name.
+     */
+    public static function agent(string $name): \LaravelAIAgent\Agent
+    {
+        $config = config("ai-agent.agents.{$name}", []);
+
+        $instance = new \LaravelAIAgent\Agent($name, skipAutoDiscovery: true);
+        $instance->driver($config['driver'] ?? config('ai-agent.default'))
+            ->system($config['system_prompt'] ?? '')
+            ->agentScope($name);
+
+        if (!empty($config['model'])) {
+            $instance->model($config['model']);
+        }
+
+        return $instance;
+    }
+
+    /**
      * Check if the current execution is inside an AI tool call.
      */
     public static function isAICall(): bool

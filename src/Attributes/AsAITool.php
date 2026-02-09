@@ -24,6 +24,7 @@ class AsAITool
         public bool $requiresConfirmation = false,
         public ?string $permission = null,
         public array $examples = [],
+        public ?array $agents = null,
     ) {}
 }
 
