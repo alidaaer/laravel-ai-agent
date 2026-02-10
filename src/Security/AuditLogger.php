@@ -29,12 +29,12 @@ class AuditLogger
     /**
      * Table name for DB logging.
      */
-    protected string $tableName = 'ai_agent_audit_logs';
+    protected string $tableName = 'agent_logs';
 
     public function __construct()
     {
         $this->channel = config('ai-agent.security.audit.channel', 'ai-agent');
-        $this->dbLogging = config('ai-agent.security.audit.database', false);
+        $this->dbLogging = false;
     }
 
     /**
@@ -224,7 +224,9 @@ class AuditLogger
 
         try {
             DB::table($this->tableName)->insert([
-                'action' => $data['action'],
+                'type' => $data['action'] ?? 'unknown',
+                'name' => $data['tool'] ?? $data['violation_type'] ?? null,
+                'conversation_id' => $data['conversation_id'] ?? null,
                 'data' => json_encode($data, JSON_UNESCAPED_UNICODE),
                 'user_id' => $data['user_id'] ?? null,
                 'ip_address' => $data['ip_address'] ?? request()->ip(),

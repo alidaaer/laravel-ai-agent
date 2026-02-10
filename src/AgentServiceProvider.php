@@ -8,6 +8,7 @@ use LaravelAIAgent\Contracts\MemoryInterface;
 use LaravelAIAgent\Drivers\OpenAIDriver;
 use LaravelAIAgent\Drivers\AnthropicDriver;
 use LaravelAIAgent\Memory\SessionMemory;
+use LaravelAIAgent\Memory\DatabaseMemory;
 use LaravelAIAgent\Memory\NullMemory;
 use LaravelAIAgent\Tools\ToolDiscovery;
 use LaravelAIAgent\Tools\ToolRegistry;
@@ -63,6 +64,7 @@ class AgentServiceProvider extends ServiceProvider
             
             return match ($driver) {
                 'session' => new SessionMemory(),
+                'database' => new DatabaseMemory(),
                 'null' => new NullMemory(),
                 default => new SessionMemory(),
             };
@@ -82,6 +84,9 @@ class AgentServiceProvider extends ServiceProvider
         $this->publishes([
             __DIR__ . '/../config/ai-agent.php' => config_path('ai-agent.php'),
         ], 'ai-agent-config');
+
+        // Load migrations
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 
         // Publish migrations
         $this->publishes([

@@ -15,10 +15,95 @@ class AIAgentChat extends HTMLElement {
     static get observedAttributes() {
         return [
             'endpoint', 'history-endpoint', 'theme', 'position', 'width', 'height',
-            'rtl', 'welcome-message', 'placeholder', 'title', 'subtitle',
-            'primary-color', 'open', 'button-icon', 'button-size'
+            'rtl', 'lang', 'welcome-message', 'placeholder', 'title', 'subtitle',
+            'primary-color', 'open', 'button-icon', 'button-size',
+            'conversations-label', 'new-chat-label', 'no-conversations-label'
         ];
     }
+
+    // ================================
+    // Translations
+    // ================================
+
+    static translations = {
+        en: {
+            title: 'AI Assistant',
+            placeholder: 'Type a message...',
+            conversations: 'Conversations',
+            newChat: '+ New Chat',
+            delete: 'Delete',
+            loadFailed: 'Failed to load',
+            noConversations: 'No conversations yet',
+            errorLoading: 'Error loading',
+            justNow: 'Just now',
+            minutesAgo: '{n}m ago',
+            hoursAgo: '{n}h ago',
+            daysAgo: '{n}d ago',
+            error: 'Error: {msg}',
+        },
+        ar: {
+            title: 'مساعد ذكي',
+            placeholder: 'اكتب رسالة...',
+            conversations: 'المحادثات',
+            newChat: '+ محادثة جديدة',
+            delete: 'حذف',
+            loadFailed: 'فشل تحميل المحادثات',
+            noConversations: 'لا توجد محادثات سابقة',
+            errorLoading: 'خطأ في التحميل',
+            justNow: 'الآن',
+            minutesAgo: 'منذ {n} دقيقة',
+            hoursAgo: 'منذ {n} ساعة',
+            daysAgo: 'منذ {n} يوم',
+            error: 'خطأ: {msg}',
+        },
+        fr: {
+            title: 'Assistant IA',
+            placeholder: 'Saisissez un message...',
+            conversations: 'Conversations',
+            newChat: '+ Nouvelle conversation',
+            delete: 'Supprimer',
+            loadFailed: 'Échec du chargement',
+            noConversations: 'Aucune conversation',
+            errorLoading: 'Erreur de chargement',
+            justNow: 'À l\'instant',
+            minutesAgo: 'Il y a {n} min',
+            hoursAgo: 'Il y a {n}h',
+            daysAgo: 'Il y a {n}j',
+            error: 'Erreur : {msg}',
+        },
+        es: {
+            title: 'Asistente IA',
+            placeholder: 'Escribe un mensaje...',
+            conversations: 'Conversaciones',
+            newChat: '+ Nueva conversación',
+            delete: 'Eliminar',
+            loadFailed: 'Error al cargar',
+            noConversations: 'Sin conversaciones',
+            errorLoading: 'Error al cargar',
+            justNow: 'Ahora',
+            minutesAgo: 'Hace {n} min',
+            hoursAgo: 'Hace {n}h',
+            daysAgo: 'Hace {n}d',
+            error: 'Error: {msg}',
+        },
+        zh: {
+            title: 'AI 助手',
+            placeholder: '输入消息...',
+            conversations: '对话列表',
+            newChat: '+ 新对话',
+            delete: '删除',
+            loadFailed: '加载失败',
+            noConversations: '暂无对话',
+            errorLoading: '加载出错',
+            justNow: '刚刚',
+            minutesAgo: '{n}分钟前',
+            hoursAgo: '{n}小时前',
+            daysAgo: '{n}天前',
+            error: '错误：{msg}',
+        },
+    };
+
+    static rtlLanguages = ['ar', 'he', 'fa', 'ur'];
 
     constructor() {
         super();
@@ -91,19 +176,48 @@ class AIAgentChat extends HTMLElement {
     // Configuration
     // ================================
 
+    get lang() {
+        return this.getAttribute('lang') || 'en';
+    }
+
+
+    t(key, params = {}) {
+        // Check for attribute override
+        const attrMap = {
+            conversations: 'conversations-label',
+            newChat: 'new-chat-label',
+            noConversations: 'no-conversations-label',
+        };
+        if (attrMap[key]) {
+            const attrVal = this.getAttribute(attrMap[key]);
+            if (attrVal) return attrVal;
+        }
+
+        const lang = this.lang;
+        const translations = AIAgentChat.translations[lang] || AIAgentChat.translations['en'];
+        let text = translations[key] || AIAgentChat.translations['en'][key] || key;
+        Object.entries(params).forEach(([k, v]) => {
+            text = text.replace(`{${k}}`, v);
+        });
+        return text;
+    }
+
     get config() {
+        const lang = this.lang;
+        const isRtl = this.hasAttribute('rtl') || AIAgentChat.rtlLanguages.includes(lang);
         return {
             endpoint: this.getAttribute('endpoint') || '/api/chat',
             theme: this.getAttribute('theme') || 'dark',
             position: this.getAttribute('position') || 'bottom-right',
             width: this.getAttribute('width') || '420px',
             height: this.getAttribute('height') || '550px',
-            rtl: this.hasAttribute('rtl'),
-            title: this.getAttribute('title') || 'AI Assistant',
+            rtl: isRtl,
+            lang: lang,
+            title: this.getAttribute('title') || this.t('title'),
             subtitle: this.getAttribute('subtitle') || '',
-            placeholder: this.getAttribute('placeholder') || 'Type your message...',
+            placeholder: this.getAttribute('placeholder') || this.t('placeholder'),
             primaryColor: this.getAttribute('primary-color') || '#6366f1',
-            buttonIcon: this.getAttribute('button-icon') || '💬',
+            buttonIcon: this.getAttribute('button-icon') || null,
             buttonSize: this.getAttribute('button-size') || '60px',
             persistMessages: this.hasAttribute('persist-messages'),
             historyEndpoint: this.getAttribute('history-endpoint') || null,
@@ -193,10 +307,28 @@ class AIAgentChat extends HTMLElement {
 
     updateMessagesUI() {
         const container = this.shadowRoot.querySelector('.widget-messages');
-        if (container) {
-            container.innerHTML = this.renderMessages();
-            container.scrollTop = container.scrollHeight;
+        if (!container) return;
+
+        // Preserve typing indicator
+        const typingIndicator = container.querySelector('.typing-indicator');
+
+        // Clear and re-render
+        container.innerHTML = this.renderMessages();
+
+        // Re-add typing indicator
+        if (typingIndicator) {
+            container.appendChild(typingIndicator);
+        } else {
+            container.insertAdjacentHTML('beforeend', `
+                <div class="typing-indicator" part="typing">
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                    <span class="typing-dot"></span>
+                </div>
+            `);
         }
+
+        container.scrollTop = container.scrollHeight;
     }
 
     // ================================
@@ -298,7 +430,7 @@ class AIAgentChat extends HTMLElement {
      * Render button icon - supports emoji, image URL, or inline SVG
      */
     renderButtonIcon(icon) {
-        if (!icon) return '💬';
+        if (!icon) return '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>';
 
         // Check if it's a URL (image)
         if (icon.startsWith('http://') || icon.startsWith('https://') || icon.startsWith('/')) {
@@ -329,7 +461,7 @@ class AIAgentChat extends HTMLElement {
             <style>
                 :host {
                     --primary: ${primaryColor};
-                    --primary-dark: ${this.darkenColor(primaryColor, 20)};
+                    --primary-dark: ${this.darkenColor(primaryColor, 5)};
                     --bg: ${themeStyles.bg};
                     --card: ${themeStyles.card};
                     --text: ${themeStyles.text};
@@ -356,6 +488,7 @@ class AIAgentChat extends HTMLElement {
                     height: ${buttonSize};
                     border-radius: 50%;
                     background: var(--primary);
+                    color: #fff;
                     border: none;
                     cursor: pointer;
                     font-size: 1.5rem;
@@ -689,6 +822,9 @@ class AIAgentChat extends HTMLElement {
                     cursor: pointer;
                     font-size: 1.1rem;
                     transition: all 0.2s;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                 }
 
                 .widget-send:hover { background: var(--primary-dark); }
@@ -701,6 +837,140 @@ class AIAgentChat extends HTMLElement {
                     background: var(--border); 
                     border-radius: 3px; 
                 }
+
+                /* Conversations Panel */
+                .conversations-panel {
+                    display: none;
+                    flex-direction: column;
+                    height: 100%;
+                    background: var(--bg);
+                }
+                .conversations-panel.open { display: flex; }
+
+                .conversations-panel-header {
+                    padding: 14px 16px;
+                    background: var(--card);
+                    border-bottom: 1px solid var(--border);
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                }
+                .conversations-panel-header h4 {
+                    font-size: 0.9rem;
+                    font-weight: 600;
+                    color: var(--text);
+                }
+                .conv-back-btn {
+                    background: none;
+                    border: none;
+                    color: var(--muted);
+                    cursor: pointer;
+                    font-size: 1.2rem;
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    transition: all 0.2s;
+                }
+                .conv-back-btn:hover { color: var(--text); background: var(--border); }
+
+                .conv-new-btn {
+                    padding: 10px 16px;
+                    margin: 12px;
+                    background: var(--primary);
+                    color: white;
+                    border: none;
+                    border-radius: 10px;
+                    cursor: pointer;
+                    font-size: 0.85rem;
+                    font-weight: 500;
+                    transition: background 0.2s;
+                }
+                .conv-new-btn:hover { background: var(--primary-dark); }
+
+                .conversations-list {
+                    flex: 1;
+                    overflow-y: auto;
+                    padding: 0 12px 12px;
+                }
+
+                .conv-item {
+                    display: flex;
+                    align-items: center;
+                    padding: 12px;
+                    margin-bottom: 4px;
+                    border-radius: 10px;
+                    cursor: pointer;
+                    transition: background 0.15s;
+                    gap: 10px;
+                }
+                .conv-item:hover { background: var(--card); }
+                .conv-item.active { background: var(--card); border: 1px solid var(--primary); }
+
+                .conv-item-info {
+                    flex: 1;
+                    min-width: 0;
+                }
+                .conv-item-title {
+                    font-size: 0.85rem;
+                    color: var(--text);
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .conv-item-time {
+                    font-size: 0.7rem;
+                    color: var(--muted);
+                    margin-top: 2px;
+                }
+                .conv-delete-btn {
+                    background: none;
+                    border: none;
+                    color: var(--muted);
+                    cursor: pointer;
+                    font-size: 0.85rem;
+                    padding: 4px 6px;
+                    border-radius: 6px;
+                    opacity: 0;
+                    transition: all 0.2s;
+                }
+                .conv-item:hover .conv-delete-btn { opacity: 1; }
+                .conv-delete-btn:hover { color: #ef4444; background: rgba(239,68,68,0.1); }
+
+                .conv-empty {
+                    text-align: center;
+                    padding: 40px 20px;
+                    color: var(--muted);
+                    font-size: 0.85rem;
+                }
+
+                /* Header conversations button */
+                .widget-header-actions {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                .widget-conv-btn {
+                    background: rgba(255,255,255,0.2);
+                    border: none;
+                    color: white;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                    transition: background 0.2s;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+                .widget-conv-btn:hover { background: rgba(255,255,255,0.3); }
+
+                /* Chat view container */
+                .chat-view {
+                    display: flex;
+                    flex-direction: column;
+                    height: 100%;
+                }
+                .conversations-panel.open ~ .chat-view { display: none; }
 
                 /* Mobile */
                 @media (max-width: 480px) {
@@ -722,33 +992,49 @@ class AIAgentChat extends HTMLElement {
             </button>
 
             <div class="widget-window" part="window">
-                <div class="widget-header" part="header">
-                    <div class="widget-header-info">
-                        <h3>${title}</h3>
-                        ${subtitle ? `<p>${subtitle}</p>` : ''}
+                <!-- Conversations Panel -->
+                <div class="conversations-panel" part="conversations">
+                    <div class="conversations-panel-header">
+                        <h4>${this.t('conversations')}</h4>
+                        <button class="conv-back-btn">${rtl ? '→' : '←'}</button>
                     </div>
-                    <button class="widget-close" part="close-button">×</button>
+                    <button class="conv-new-btn">${this.t('newChat')}</button>
+                    <div class="conversations-list"></div>
                 </div>
 
-                <div class="widget-messages" part="messages">
-                    ${this.renderMessages()}
-                    <div class="typing-indicator" part="typing">
-                        <span class="typing-dot"></span>
-                        <span class="typing-dot"></span>
-                        <span class="typing-dot"></span>
+                <!-- Chat View -->
+                <div class="chat-view">
+                    <div class="widget-header" part="header">
+                        <div class="widget-header-info">
+                            <h3>${title}</h3>
+                            ${subtitle ? `<p>${subtitle}</p>` : ''}
+                        </div>
+                        <div class="widget-header-actions">
+                            <button class="widget-conv-btn" title="${this.t('conversations')}">☰</button>
+                            <button class="widget-close" part="close-button">×</button>
+                        </div>
                     </div>
-                </div>
 
-                <div class="widget-input-area" part="input-area">
-                    <input 
-                        type="text" 
-                        class="widget-input" 
-                        placeholder="${placeholder}"
-                        part="input"
-                    >
-                    <button class="widget-send" part="send-button">
-                        ${rtl ? '←' : '→'}
-                    </button>
+                    <div class="widget-messages" part="messages">
+                        ${this.renderMessages()}
+                        <div class="typing-indicator" part="typing">
+                            <span class="typing-dot"></span>
+                            <span class="typing-dot"></span>
+                            <span class="typing-dot"></span>
+                        </div>
+                    </div>
+
+                    <div class="widget-input-area" part="input-area">
+                        <input 
+                            type="text" 
+                            class="widget-input" 
+                            placeholder="${placeholder}"
+                            part="input"
+                        >
+                        <button class="widget-send" part="send-button">
+                            ${rtl ? '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: scaleX(-1);"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-send-horizontal-icon lucide-send-horizontal"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg>'}
+                        </button>
+                    </div>
                 </div>
             </div>
         `;
@@ -808,11 +1094,11 @@ class AIAgentChat extends HTMLElement {
         const positions = {
             'bottom-right': {
                 button: 'bottom: 20px; right: 20px;',
-                window: 'bottom: 100px; right: 20px;',
+                window: 'bottom: 20px; right: 20px;',
             },
             'bottom-left': {
                 button: 'bottom: 20px; left: 20px;',
-                window: 'bottom: 100px; left: 20px;',
+                window: 'bottom: 20px; left: 20px;',
             },
             'top-right': {
                 button: 'top: 20px; right: 20px;',
@@ -864,6 +1150,15 @@ class AIAgentChat extends HTMLElement {
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendMessage();
         });
+
+        // Conversations panel
+        const convBtn = this.shadowRoot.querySelector('.widget-conv-btn');
+        const backBtn = this.shadowRoot.querySelector('.conv-back-btn');
+        const newBtn = this.shadowRoot.querySelector('.conv-new-btn');
+
+        if (convBtn) convBtn.addEventListener('click', () => this.showConversations());
+        if (backBtn) backBtn.addEventListener('click', () => this.hideConversations());
+        if (newBtn) newBtn.addEventListener('click', () => this.newConversation());
     }
 
     // ================================
@@ -918,7 +1213,7 @@ class AIAgentChat extends HTMLElement {
             this.addMessage(response, 'bot');
         } catch (error) {
             this.showTyping(false);
-            this.addMessage('Error: ' + error.message, 'bot');
+            this.addMessage(this.t('error', { msg: error.message }), 'bot');
             this.dispatchEvent(new CustomEvent('error', { detail: error }));
         }
     }
@@ -958,7 +1253,12 @@ class AIAgentChat extends HTMLElement {
         }
 
         const data = await response.json();
-        return data.response || data.message || data.content || JSON.stringify(data);
+        let result = data.response || data.message || data.content || '';
+        // Handle case where response is an object (e.g. AgentResponse serialized)
+        if (typeof result === 'object' && result !== null) {
+            result = result.content || JSON.stringify(result);
+        }
+        return result || JSON.stringify(data);
     }
 
     addMessage(content, role) {
@@ -974,13 +1274,19 @@ class AIAgentChat extends HTMLElement {
 
     updateMessages() {
         const container = this.shadowRoot.querySelector('.widget-messages');
+        if (!container) return;
+
         const typingIndicator = container.querySelector('.typing-indicator');
 
         // Remove old messages
         container.querySelectorAll('.message').forEach(el => el.remove());
 
-        // Add messages HTML before typing indicator
-        typingIndicator.insertAdjacentHTML('beforebegin', this.renderMessages());
+        // Add messages HTML before typing indicator (or append if not found)
+        if (typingIndicator) {
+            typingIndicator.insertAdjacentHTML('beforebegin', this.renderMessages());
+        } else {
+            container.insertAdjacentHTML('beforeend', this.renderMessages());
+        }
 
         // Scroll to bottom
         container.scrollTop = container.scrollHeight;
@@ -989,11 +1295,165 @@ class AIAgentChat extends HTMLElement {
     showTyping(show) {
         this.isTyping = show;
         const indicator = this.shadowRoot.querySelector('.typing-indicator');
+        if (!indicator) return;
         indicator.classList.toggle('show', show);
 
         if (show) {
             const container = this.shadowRoot.querySelector('.widget-messages');
-            container.scrollTop = container.scrollHeight;
+            if (container) container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    // ================================
+    // Conversations Management
+    // ================================
+
+    async showConversations() {
+        const panel = this.shadowRoot.querySelector('.conversations-panel');
+        panel.classList.add('open');
+        await this.loadConversationsList();
+    }
+
+    hideConversations() {
+        const panel = this.shadowRoot.querySelector('.conversations-panel');
+        panel.classList.remove('open');
+    }
+
+    getConversationsEndpoint() {
+        if (this.config.historyEndpoint) {
+            return this.config.historyEndpoint.replace(/\/history$/, '/conversations');
+        }
+        const endpoint = this.config.endpoint;
+        if (endpoint.endsWith('/chat')) {
+            return endpoint.replace(/\/chat$/, '/conversations');
+        }
+        return endpoint + '/conversations';
+    }
+
+    async loadConversationsList() {
+        const list = this.shadowRoot.querySelector('.conversations-list');
+        list.innerHTML = `<div class="conv-empty">...</div>`;
+
+        try {
+            const headers = { 'Accept': 'application/json' };
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            if (csrfToken) headers['X-CSRF-TOKEN'] = csrfToken;
+
+            const response = await fetch(this.getConversationsEndpoint(), {
+                headers, credentials: 'same-origin'
+            });
+
+            if (!response.ok) {
+                list.innerHTML = `<div class="conv-empty">${this.t('loadFailed')}</div>`;
+                return;
+            }
+
+            const data = await response.json();
+            if (!data.success || !data.conversations || data.conversations.length === 0) {
+                list.innerHTML = `<div class="conv-empty">${this.t('noConversations')}</div>`;
+                return;
+            }
+
+            list.innerHTML = data.conversations.map(conv => `
+                <div class="conv-item ${conv.id === this.conversationId ? 'active' : ''}" data-id="${conv.id}">
+                    <div class="conv-item-info">
+                        <div class="conv-item-title">${this.escapeHtml(conv.title)}</div>
+                        <div class="conv-item-time">${this.formatTime(conv.updated_at)}</div>
+                    </div>
+                    <button class="conv-delete-btn" data-id="${conv.id}" title="${this.t('delete')}">🗑</button>
+                </div>
+            `).join('');
+
+            // Click to switch
+            list.querySelectorAll('.conv-item').forEach(item => {
+                item.addEventListener('click', (e) => {
+                    if (e.target.closest('.conv-delete-btn')) return;
+                    this.switchConversation(item.dataset.id);
+                });
+            });
+
+            // Delete
+            list.querySelectorAll('.conv-delete-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.deleteConversation(btn.dataset.id);
+                });
+            });
+        } catch (e) {
+            list.innerHTML = `<div class="conv-empty">${this.t('errorLoading')}</div>`;
+            console.warn('AI Agent: Failed to load conversations', e);
+        }
+    }
+
+    async switchConversation(id) {
+        this.conversationId = id;
+        this.messages = [];
+        this.saveMessages();
+        this.updateMessagesUI();
+        this.hideConversations();
+
+        // Load messages from server
+        await this.loadHistoryFromServer();
+
+        if (this.messages.length === 0) {
+            const welcomeMsg = this.getAttribute('welcome-message');
+            if (welcomeMsg) this.addMessage(welcomeMsg, 'bot');
+        }
+    }
+
+    async newConversation() {
+        this.conversationId = this.generateId();
+        this.messages = [];
+        this.saveMessages();
+        this.updateMessagesUI();
+        this.hideConversations();
+
+        const welcomeMsg = this.getAttribute('welcome-message');
+        if (welcomeMsg) this.addMessage(welcomeMsg, 'bot');
+    }
+
+    async deleteConversation(id) {
+        try {
+            const headers = { 'Content-Type': 'application/json', 'Accept': 'application/json' };
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+            if (csrfToken) headers['X-CSRF-TOKEN'] = csrfToken;
+
+            await fetch(this.getHistoryEndpoint(), {
+                method: 'DELETE',
+                headers,
+                credentials: 'same-origin',
+                body: JSON.stringify({ conversation_id: id }),
+            });
+
+            // If deleted current conversation, start new one
+            if (id === this.conversationId) {
+                await this.newConversation();
+            }
+
+            // Refresh list
+            await this.loadConversationsList();
+        } catch (e) {
+            console.warn('AI Agent: Failed to delete conversation', e);
+        }
+    }
+
+    formatTime(dateStr) {
+        if (!dateStr) return '';
+        try {
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diffMs = now - date;
+            const diffMin = Math.floor(diffMs / 60000);
+            const diffHr = Math.floor(diffMs / 3600000);
+            const diffDay = Math.floor(diffMs / 86400000);
+
+            if (diffMin < 1) return this.t('justNow');
+            if (diffMin < 60) return this.t('minutesAgo', { n: diffMin });
+            if (diffHr < 24) return this.t('hoursAgo', { n: diffHr });
+            if (diffDay < 7) return this.t('daysAgo', { n: diffDay });
+            return date.toLocaleDateString();
+        } catch {
+            return '';
         }
     }
 

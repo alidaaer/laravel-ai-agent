@@ -89,9 +89,20 @@ class Agent
      */
     public function tools(array $classes): self
     {
+        // Clear auto-discovered tools — explicit tools() replaces them
+        $this->toolRegistry->clear();
+
         $tools = $this->agentScope
             ? $this->toolDiscovery->discoverForAgent($classes, $this->agentScope)
             : $this->toolDiscovery->discoverPublic($classes);
+
+        \Illuminate\Support\Facades\Log::info('🛠️ tools() called', [
+            'classes' => $classes,
+            'agent_scope' => $this->agentScope,
+            'discovered_count' => count($tools),
+            'discovered_names' => array_column($tools, 'name'),
+        ]);
+
         $this->toolRegistry->register($tools);
         return $this;
     }
@@ -207,6 +218,14 @@ class Agent
         // Get conversation history
         $history = $memory->recall($this->conversationId);
 
+        \Illuminate\Support\Facades\Log::info('🧠 Memory state', [
+            'conversation_id' => $this->conversationId,
+            'history_count' => count($history),
+            'history_roles' => array_map(fn($m) => $m['role'] ?? 'unknown', $history),
+            'has_tool_calls_in_history' => count(array_filter($history, fn($m) => !empty($m['tool_calls']))),
+            'memory_class' => get_class($memory),
+        ]);
+
         // Build options
         $options = $this->options;
         
@@ -244,12 +263,24 @@ class Agent
         $memory->remember($this->conversationId, ['role' => 'user', 'content' => $message]);
 
         // Run the agent loop with security checks
-        $response = $this->runLoop($driver, $message, $history, $options, $security);
+        $response = $this->runLoop($driver, $message, $history, $options, $security, $memory);
+
+        \Illuminate\Support\Facades\Log::info('🔍 Agent runLoop result', [
+            'content_length' => strlen($response->content),
+            'content_preview' => mb_substr($response->content, 0, 200),
+            'has_tool_calls' => $response->hasToolCalls(),
+            'finish_reason' => $response->finishReason,
+        ]);
 
         // Output Sanitization - clean response
         $content = $response->content;
         if (config('ai-agent.security.enabled', true)) {
             $content = $security->sanitizeOutput($content);
+
+            \Illuminate\Support\Facades\Log::info('🔍 After sanitizeOutput', [
+                'content_length' => strlen($content),
+                'content_preview' => mb_substr($content, 0, 200),
+            ]);
         }
 
         // Store assistant response
@@ -289,13 +320,21 @@ class Agent
         string $message,
         array $history,
         array $options,
-        ?SecurityGuard $security = null
+        ?SecurityGuard $security = null,
+        ?\LaravelAIAgent\Contracts\MemoryInterface $memory = null
     ): AgentResponse {
         $maxIterations = config('ai-agent.security.max_iterations', $this->maxIterations);
         $iterations = 0;
         $tools = $this->toolRegistry->all();
         $originalMessage = $message;
         $lastToolResults = [];
+
+        \Illuminate\Support\Facades\Log::info('🔍 runLoop start', [
+            'registered_tools' => array_keys($tools),
+            'tools_count' => count($tools),
+            'history_count' => count($history),
+            'agent_scope' => $this->agentScope,
+        ]);
 
         while ($iterations < $maxIterations) {
             $iterations++;
@@ -311,7 +350,25 @@ class Agent
             }
 
             // Call the LLM
+            \Illuminate\Support\Facades\Log::info('📡 LLM prompt', [
+                'iteration' => $iterations,
+                'tools_sent' => count($tools),
+                'tool_names_sent' => array_keys($tools),
+                'history_count' => count($history),
+                'message_preview' => mb_substr($message, 0, 100),
+                'has_system' => isset($options['system']),
+            ]);
+
             $response = $driver->prompt($message, $tools, $history, $options);
+
+            \Illuminate\Support\Facades\Log::info('📡 LLM response', [
+                'iteration' => $iterations,
+                'content_length' => strlen($response->content),
+                'has_tool_calls' => $response->hasToolCalls(),
+                'tool_calls_count' => count($response->toolCalls),
+                'tool_call_names' => array_column($response->toolCalls, 'name'),
+                'finish_reason' => $response->finishReason,
+            ]);
 
             // If no tool calls, we're done
             if (!$response->hasToolCalls()) {
@@ -365,6 +422,17 @@ class Agent
             $toolResults = $this->toolExecutor->executeMany($response->toolCalls, $this->context);
             $lastToolResults = $toolResults;
 
+            // Log tool calls and results
+            foreach ($toolResults as $result) {
+                \Illuminate\Support\Facades\Log::info('🔧 AI Tool Call', [
+                    'tool' => $result['name'],
+                    'success' => $result['success'],
+                    'result' => $result['success'] ? $result['result'] : null,
+                    'error' => $result['success'] ? null : $result['error'],
+                    'conversation_id' => $this->conversationId,
+                ]);
+            }
+
             // For the first iteration, add the user's original message to history
             if ($iterations === 1) {
                 $history[] = [
@@ -374,15 +442,19 @@ class Agent
             }
 
             // Add assistant's response with tool calls to history
-            $history[] = [
+            $assistantMsg = [
                 'role' => 'assistant',
                 'content' => $response->content,
                 'tool_calls' => $response->toolCalls,
             ];
+            $history[] = $assistantMsg;
+            if ($memory) {
+                $memory->remember($this->conversationId, $assistantMsg);
+            }
 
             // Add tool results to history  
             foreach ($toolResults as $result) {
-                $history[] = [
+                $toolMsg = [
                     'role' => 'tool',
                     'tool_call_id' => $result['tool_call_id'],
                     'tool_name' => $result['name'],
@@ -390,6 +462,10 @@ class Agent
                         ? json_encode($result['result'], JSON_UNESCAPED_UNICODE)
                         : "Error: " . $result['error'],
                 ];
+                $history[] = $toolMsg;
+                if ($memory) {
+                    $memory->remember($this->conversationId, $toolMsg);
+                }
             }
 
             // Continue with a message asking LLM to respond based on tool results

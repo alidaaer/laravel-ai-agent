@@ -25,4 +25,9 @@ class NullMemory implements MemoryInterface
     {
         return [];
     }
+
+    public function conversationsWithMeta(): array
+    {
+        return [];
+    }
 }

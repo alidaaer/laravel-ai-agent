@@ -34,4 +34,11 @@ interface MemoryInterface
      * @return array
      */
     public function conversations(): array;
+
+    /**
+     * Get all conversations with metadata.
+     *
+     * @return array [['id' => '...', 'title' => '...', 'updated_at' => '...']]
+     */
+    public function conversationsWithMeta(): array;
 }

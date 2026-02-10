@@ -144,6 +144,27 @@ class ChatController extends Controller
     }
 
     /**
+     * List all conversations with metadata.
+     */
+    public function conversations(Request $request)
+    {
+        try {
+            $memory = \LaravelAIAgent\Agent::resolveMemory(config('ai-agent.memory.driver', 'session'));
+            $conversations = $memory->conversationsWithMeta();
+
+            return response()->json([
+                'success' => true,
+                'conversations' => $conversations,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'success' => false,
+                'error' => config('app.debug') ? $e->getMessage() : 'Failed to load conversations',
+            ], 500);
+        }
+    }
+
+    /**
      * Clear conversation history.
      */
     public function clear(Request $request)

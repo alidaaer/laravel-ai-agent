@@ -19,8 +19,9 @@ class DatabaseMemory implements MemoryInterface
         DB::table($this->messagesTable)->insert([
             'conversation_id' => $conversationId,
             'role' => $message['role'],
-            'content' => $message['content'],
-            'tool_calls' => isset($message['tool_calls']) ? json_encode($message['tool_calls']) : null,
+            'content' => $message['content'] ?? '',
+            'tool_calls' => !empty($message['tool_calls']) ? json_encode($message['tool_calls']) : null,
+            'tool_call_id' => $message['tool_call_id'] ?? null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -68,6 +69,28 @@ class DatabaseMemory implements MemoryInterface
             ->orderBy('updated_at', 'desc')
             ->pluck('id')
             ->toArray();
+    }
+
+    public function conversationsWithMeta(): array
+    {
+        $conversations = DB::table($this->conversationsTable)
+            ->orderBy('updated_at', 'desc')
+            ->get();
+
+        return $conversations->map(function ($conv) {
+            // Get first user message as title
+            $firstMessage = DB::table($this->messagesTable)
+                ->where('conversation_id', $conv->id)
+                ->where('role', 'user')
+                ->orderBy('created_at', 'asc')
+                ->value('content');
+
+            return [
+                'id' => $conv->id,
+                'title' => $firstMessage ? mb_substr($firstMessage, 0, 60) : 'New conversation',
+                'updated_at' => $conv->updated_at,
+            ];
+        })->toArray();
     }
 
     protected function ensureConversationExists(string $conversationId): void

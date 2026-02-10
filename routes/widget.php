@@ -14,6 +14,10 @@ Route::middleware(config('ai-agent.widget.middleware', ['web']))
         Route::get('/history', [ChatController::class, 'history'])
             ->name('ai-agent.history');
 
+        // List all conversations
+        Route::get('/conversations', [ChatController::class, 'conversations'])
+            ->name('ai-agent.conversations');
+
         // Clear conversation
         Route::delete('/history', [ChatController::class, 'clear'])
             ->name('ai-agent.clear');
