@@ -40,6 +40,7 @@ class AIAgentChat extends HTMLElement {
             hoursAgo: '{n}h ago',
             daysAgo: '{n}d ago',
             error: 'Error: {msg}',
+            stopped: 'Stopped',
         },
         ar: {
             title: 'مساعد ذكي',
@@ -55,6 +56,7 @@ class AIAgentChat extends HTMLElement {
             hoursAgo: 'منذ {n} ساعة',
             daysAgo: 'منذ {n} يوم',
             error: 'خطأ: {msg}',
+            stopped: 'تم الإيقاف',
         },
         fr: {
             title: 'Assistant IA',
@@ -70,6 +72,7 @@ class AIAgentChat extends HTMLElement {
             hoursAgo: 'Il y a {n}h',
             daysAgo: 'Il y a {n}j',
             error: 'Erreur : {msg}',
+            stopped: 'Arrêté',
         },
         es: {
             title: 'Asistente IA',
@@ -85,6 +88,7 @@ class AIAgentChat extends HTMLElement {
             hoursAgo: 'Hace {n}h',
             daysAgo: 'Hace {n}d',
             error: 'Error: {msg}',
+            stopped: 'Detenido',
         },
         zh: {
             title: 'AI 助手',
@@ -100,6 +104,7 @@ class AIAgentChat extends HTMLElement {
             hoursAgo: '{n}小时前',
             daysAgo: '{n}天前',
             error: '错误：{msg}',
+            stopped: '已停止',
         },
     };
 
@@ -111,6 +116,8 @@ class AIAgentChat extends HTMLElement {
         this.isOpen = false;
         this.messages = [];
         this.isTyping = false;
+        this.isSending = false;
+        this.abortController = null;
         this.conversationId = this.generateId();
     }
 
@@ -828,7 +835,10 @@ class AIAgentChat extends HTMLElement {
                 }
 
                 .widget-send:hover { background: var(--primary-dark); }
-                .widget-send:disabled { opacity: 0.5; cursor: not-allowed; }
+                .widget-send.stop { background: #ef4444; }
+                .widget-send.stop:hover { background: #dc2626; }
+
+                .widget-input:disabled { opacity: 0.6; cursor: not-allowed; }
 
                 /* Scrollbar */
                 .widget-messages::-webkit-scrollbar { width: 6px; }
@@ -1145,7 +1155,9 @@ class AIAgentChat extends HTMLElement {
 
         button.addEventListener('click', () => this.toggle());
         closeBtn.addEventListener('click', () => this.close());
-        sendBtn.addEventListener('click', () => this.sendMessage());
+        sendBtn.addEventListener('click', () => {
+            this.isSending ? this.stopMessage() : this.sendMessage();
+        });
 
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.sendMessage();
@@ -1201,11 +1213,12 @@ class AIAgentChat extends HTMLElement {
         const input = this.shadowRoot.querySelector('.widget-input');
         const message = input.value.trim();
 
-        if (!message) return;
+        if (!message || this.isSending) return;
 
         input.value = '';
         this.addMessage(message, 'user');
         this.showTyping(true);
+        this.setSending(true);
 
         try {
             const response = await this.fetchResponse(message);
@@ -1213,12 +1226,47 @@ class AIAgentChat extends HTMLElement {
             this.addMessage(response, 'bot');
         } catch (error) {
             this.showTyping(false);
-            this.addMessage(this.t('error', { msg: error.message }), 'bot');
-            this.dispatchEvent(new CustomEvent('error', { detail: error }));
+            if (error.name === 'AbortError') {
+                this.addMessage(this.t('stopped'), 'bot');
+            } else {
+                this.addMessage(this.t('error', { msg: error.message }), 'bot');
+                this.dispatchEvent(new CustomEvent('error', { detail: error }));
+            }
+        } finally {
+            this.setSending(false);
         }
     }
 
+    stopMessage() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+    }
+
+    setSending(sending) {
+        this.isSending = sending;
+        const input = this.shadowRoot.querySelector('.widget-input');
+        const sendBtn = this.shadowRoot.querySelector('.widget-send');
+        if (input) input.disabled = sending;
+        if (sendBtn) {
+            sendBtn.classList.toggle('stop', sending);
+            sendBtn.innerHTML = sending
+                ? '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>'
+                : this.getSendIcon();
+        }
+    }
+
+    getSendIcon() {
+        const rtl = this.config.rtl;
+        return rtl
+            ? '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: scaleX(-1);"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg>'
+            : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg>';
+    }
+
     async fetchResponse(message) {
+        this.abortController = new AbortController();
+
         const headers = {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
@@ -1234,6 +1282,7 @@ class AIAgentChat extends HTMLElement {
             method: 'POST',
             headers,
             credentials: 'same-origin',
+            signal: this.abortController.signal,
             body: JSON.stringify({
                 message,
                 conversation_id: this.conversationId,
@@ -1253,6 +1302,7 @@ class AIAgentChat extends HTMLElement {
         }
 
         const data = await response.json();
+        this.abortController = null;
         let result = data.response || data.message || data.content || '';
         // Handle case where response is an object (e.g. AgentResponse serialized)
         if (typeof result === 'object' && result !== null) {
