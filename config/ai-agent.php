@@ -112,10 +112,9 @@ return [
     'discovery' => [
         'enabled' => true,
         'paths' => [
-            app_path('Services'),
-            app_path('AI/Tools'),
+            app_path(),
         ],
-        'cache' => env('AI_AGENT_CACHE_TOOLS', false),
+        'cache' => env('AI_AGENT_CACHE_TOOLS', true),
         'cache_ttl' => 3600,
     ],
 
@@ -125,13 +124,15 @@ return [
     |--------------------------------------------------------------------------
     |
     | How the agent remembers conversation history.
-    | Drivers: "session", "database", "cache", "null"
+    | Drivers: "session", "database", "null"
     |
     */
     'memory' => [
         'driver' => env('AI_AGENT_MEMORY', 'session'),
-        'max_messages' => 50,
-        'summarize_after' => 30,
+        'summarize_after' => 10,
+        'max_messages' => 100,
+        'recent_messages' => 4,
+        'ai_summarization' => env('AI_AGENT_AI_SUMMARY', true),
     ],
 
     /*

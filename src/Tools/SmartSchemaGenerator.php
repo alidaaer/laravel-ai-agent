@@ -280,17 +280,24 @@ class SmartSchemaGenerator
         $parameters = [];
 
         foreach ($customParams as $name => $config) {
+            // Parse 'name:type' format (e.g., 'id:integer', 'price:number')
+            $explicitType = null;
+            if (str_contains($name, ':')) {
+                [$name, $explicitType] = explode(':', $name, 2);
+                $explicitType = $this->mapPhpTypeToJsonSchema($explicitType);
+            }
+
             if (is_string($config)) {
-                // Simple: 'name' => 'description'
+                // Simple: 'name' => 'description' or 'name:type' => 'description'
                 $parameters[$name] = [
-                    'type' => $this->inferTypeFromName($name),
+                    'type' => $explicitType ?? $this->inferTypeFromName($name),
                     'description' => $config,
                     'required' => true,
                 ];
             } elseif (is_array($config)) {
                 // Full config: 'name' => ['type' => 'string', 'description' => '...']
                 $parameters[$name] = [
-                    'type' => $config['type'] ?? $this->inferTypeFromName($name),
+                    'type' => $explicitType ?? $config['type'] ?? $this->inferTypeFromName($name),
                     'description' => $config['description'] ?? $this->generateParamDescription($name),
                     'required' => $config['required'] ?? true,
                 ];
