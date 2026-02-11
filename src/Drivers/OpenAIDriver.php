@@ -123,6 +123,9 @@ class OpenAIDriver extends AbstractDriver
             $messages[] = ['role' => 'system', 'content' => $options['system']];
         }
 
+        // Sanitize history: remove orphaned tool messages (tool without preceding assistant+tool_calls)
+        $history = $this->sanitizeHistory($history);
+
         // Add history with proper tool_calls formatting
         foreach ($history as $msg) {
             $formattedMsg = [
@@ -165,17 +168,131 @@ class OpenAIDriver extends AbstractDriver
         $formatted = [];
 
         foreach ($tools as $tool) {
+            $schema = $tool['schema'];
+
+            // Ensure schema is a valid JSON Schema object
+            if (empty($schema) || !isset($schema['type'])) {
+                $schema = ['type' => 'object', 'properties' => new \stdClass()];
+            }
+
+            // Clean properties: keep only valid JSON Schema fields
+            if (isset($schema['properties']) && is_array($schema['properties'])) {
+                if (empty($schema['properties'])) {
+                    $schema['properties'] = new \stdClass();
+                } else {
+                    $validKeys = ['type', 'description', 'enum', 'items', 'properties', 'default'];
+                    foreach ($schema['properties'] as $propName => &$propDef) {
+                        if (is_array($propDef)) {
+                            $propDef = array_intersect_key($propDef, array_flip($validKeys));
+                        }
+                    }
+                    unset($propDef);
+                }
+            }
+
             $formatted[] = [
                 'type' => 'function',
                 'function' => [
                     'name' => $tool['name'],
                     'description' => $tool['description'],
-                    'parameters' => $tool['schema'],
+                    'parameters' => $schema,
                 ],
             ];
         }
 
         return $formatted;
+    }
+
+    /**
+     * Sanitize history for strict API compatibility (DeepSeek, etc).
+     * - Remove orphaned tool messages (no preceding assistant with tool_calls)
+     * - Remove assistant+tool_calls if not ALL tool responses are present
+     */
+    protected function sanitizeHistory(array $history): array
+    {
+        // Pass 1: collect all tool_call_ids that have tool responses
+        $respondedToolCallIds = [];
+        foreach ($history as $msg) {
+            if (($msg['role'] ?? '') === 'tool' && isset($msg['tool_call_id'])) {
+                $respondedToolCallIds[$msg['tool_call_id']] = true;
+            }
+        }
+
+        \Illuminate\Support\Facades\Log::debug('🧹 sanitizeHistory', [
+            'history_count' => count($history),
+            'roles' => array_column($history, 'role'),
+            'responded_ids' => array_keys($respondedToolCallIds),
+            'assistant_tool_calls' => collect($history)
+                ->filter(fn($m) => ($m['role'] ?? '') === 'assistant' && !empty($m['tool_calls']))
+                ->map(fn($m) => collect($m['tool_calls'])->pluck('id')->toArray())
+                ->values()
+                ->toArray(),
+        ]);
+
+        // Pass 2: build clean history
+        $clean = [];
+        $skipToolCallIds = [];
+
+        foreach ($history as $msg) {
+            $role = $msg['role'] ?? '';
+
+            if ($role === 'assistant' && !empty($msg['tool_calls'])) {
+                // Check if ALL tool_calls have matching tool responses
+                $allSatisfied = true;
+                foreach ($msg['tool_calls'] as $tc) {
+                    $tcId = $tc['id'] ?? ($tc['tool_call_id'] ?? null);
+                    if ($tcId && !isset($respondedToolCallIds[$tcId])) {
+                        $allSatisfied = false;
+                        break;
+                    }
+                }
+
+                if ($allSatisfied) {
+                    $clean[] = $msg;
+                } else {
+                    // Mark these tool_call_ids to skip their partial responses too
+                    foreach ($msg['tool_calls'] as $tc) {
+                        $tcId = $tc['id'] ?? ($tc['tool_call_id'] ?? null);
+                        if ($tcId) {
+                            $skipToolCallIds[$tcId] = true;
+                        }
+                    }
+                    // Add assistant without tool_calls (keep the text if any)
+                    $content = $msg['content'] ?? '';
+                    if (!empty($content)) {
+                        $clean[] = ['role' => 'assistant', 'content' => $content];
+                    }
+                }
+                continue;
+            }
+
+            if ($role === 'tool') {
+                $tcId = $msg['tool_call_id'] ?? null;
+                // Skip if orphaned or belongs to a dropped assistant
+                if ($tcId && isset($skipToolCallIds[$tcId])) {
+                    continue;
+                }
+                // Also skip if no preceding assistant with matching tool_calls in $clean
+                $hasPrecedingAssistant = false;
+                for ($i = count($clean) - 1; $i >= 0; $i--) {
+                    if (($clean[$i]['role'] ?? '') === 'assistant' && !empty($clean[$i]['tool_calls'])) {
+                        $hasPrecedingAssistant = true;
+                        break;
+                    }
+                    if (($clean[$i]['role'] ?? '') !== 'tool') {
+                        break;
+                    }
+                }
+                if ($hasPrecedingAssistant) {
+                    $clean[] = $msg;
+                }
+                continue;
+            }
+
+            $clean[] = $msg;
+        }
+
+        return $clean;
     }
 
     protected function parseResponse(array $response): AgentResponse

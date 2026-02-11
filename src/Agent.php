@@ -8,6 +8,7 @@ use LaravelAIAgent\Contracts\MemoryInterface;
 use LaravelAIAgent\Drivers\OpenAIDriver;
 use LaravelAIAgent\Drivers\AnthropicDriver;
 use LaravelAIAgent\Drivers\GeminiDriver;
+use LaravelAIAgent\Drivers\DeepSeekDriver;
 use LaravelAIAgent\Events\AgentStarted;
 use LaravelAIAgent\Events\AgentCompleted;
 use LaravelAIAgent\Memory\SessionMemory;
@@ -344,7 +345,7 @@ class Agent
                 return new AgentResponse(
                     content: '⚠️ تم الوصول للحد الأقصى من العمليات.',
                     toolCalls: [],
-                    usage: null,
+                    usage: [],
                     finishReason: 'iteration_limit'
                 );
             }
@@ -500,6 +501,7 @@ class Agent
             'openai' => new OpenAIDriver(),
             'anthropic' => new AnthropicDriver(),
             'gemini' => new GeminiDriver(),
+            'deepseek' => new DeepSeekDriver(),
             'openrouter' => new Drivers\OpenRouterDriver(),
             default => throw new \InvalidArgumentException("Unknown driver: {$name}"),
         };

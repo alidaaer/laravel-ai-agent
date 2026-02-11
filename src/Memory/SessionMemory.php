@@ -48,8 +48,22 @@ class SessionMemory implements MemoryInterface
         $key = $this->prefix . $conversationId;
         $messages = Session::get($key, []);
 
-        $recent = config('ai-agent.memory.recent_messages', 6);
-        $recentMessages = array_slice($messages, -$recent);
+        $recent = config('ai-agent.memory.recent_messages', 4);
+        
+        // Take last N messages, but ensure we start on a clean boundary
+        $total = count($messages);
+        $startIndex = max(0, $total - $recent);
+
+        // Walk forward to find a clean start (user or system message)
+        while ($startIndex < $total) {
+            $role = $messages[$startIndex]['role'] ?? '';
+            if ($role === 'user' || $role === 'system') {
+                break;
+            }
+            $startIndex++;
+        }
+
+        $recentMessages = array_slice($messages, $startIndex);
 
         $history = [];
 
@@ -182,17 +196,17 @@ class SessionMemory implements MemoryInterface
     {
         try {
             $driverName = config('ai-agent.default', 'openai');
-            $driverConfig = config("ai-agent.drivers.{$driverName}", []);
 
             $driverClass = match ($driverName) {
                 'openai' => \LaravelAIAgent\Drivers\OpenAIDriver::class,
                 'anthropic' => \LaravelAIAgent\Drivers\AnthropicDriver::class,
                 'gemini' => \LaravelAIAgent\Drivers\GeminiDriver::class,
+                'deepseek' => \LaravelAIAgent\Drivers\DeepSeekDriver::class,
                 'openrouter' => \LaravelAIAgent\Drivers\OpenRouterDriver::class,
                 default => \LaravelAIAgent\Drivers\OpenAIDriver::class,
             };
 
-            $driver = new $driverClass($driverConfig);
+            $driver = new $driverClass();
 
             $conversationText = '';
             foreach ($messages as $msg) {

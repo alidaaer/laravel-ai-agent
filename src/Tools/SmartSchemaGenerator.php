@@ -248,10 +248,10 @@ class SmartSchemaGenerator
             }
         }
 
-        // Build JSON Schema
+        // Build JSON Schema (use stdClass for empty properties to ensure JSON encodes as {} not [])
         $schema = [
             'type' => 'object',
-            'properties' => $parameters,
+            'properties' => empty($parameters) ? new \stdClass() : $parameters,
         ];
 
         if (!empty($required)) {

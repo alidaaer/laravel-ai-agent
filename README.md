@@ -29,7 +29,7 @@
 | 🚀 **Zero Boilerplate** | Turn any method into an AI tool with a single attribute |
 | 🧠 **Smart Auto-Inference** | Auto-generates descriptions and infers types from parameter names |
 | 💬 **Chat Widget** | Beautiful, customizable Web Component - just drop it in! |
-|  **Multi-Provider** | OpenAI, Anthropic Claude, Google Gemini, OpenRouter |
+|  **Multi-Provider** | OpenAI, Anthropic Claude, Google Gemini, DeepSeek, OpenRouter |
 | 💾 **Memory** | AI-powered summarization with smart pointer tracking — session or database |
 | 📊 **Markdown Responses** | Tables, formatting, and rich text in chat |
 | ⚡ **Smart Returns** | `view()`, `redirect()`, `Model` — AI understands them all |
@@ -507,6 +507,7 @@ return [
         ],
         'anthropic' => [ /* ... */ ],
         'gemini'    => [ /* ... */ ],
+        'deepseek'  => [ /* ... */ ],
         'openrouter' => [ /* ... */ ],
     ],
     

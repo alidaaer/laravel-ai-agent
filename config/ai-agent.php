@@ -6,7 +6,7 @@ return [
     | Default Driver
     |--------------------------------------------------------------------------
     |
-    | The default AI driver to use. Supported: "openai", "anthropic", "gemini", "ollama"
+    | The default AI driver to use. Supported: "openai", "anthropic", "gemini", "deepseek", "openrouter"
     |
     */
     'default' => env('AI_AGENT_DEFAULT', env('AI_AGENT_DRIVER', 'openai')),
@@ -56,6 +56,17 @@ return [
             'model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
             'base_url' => env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta'),
             'timeout' => 60,
+        ],
+
+        'deepseek' => [
+            'api_key' => env('DEEPSEEK_API_KEY'),
+            'model' => env('DEEPSEEK_MODEL', 'deepseek-chat'),
+            'base_url' => env('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1'),
+            'timeout' => 60,
+            'retry' => [
+                'times' => 3,
+                'sleep' => 1000,
+            ],
         ],
 
         'openrouter' => [

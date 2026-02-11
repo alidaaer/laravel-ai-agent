@@ -37,27 +37,19 @@ class DatabaseMemory implements MemoryInterface
 
     public function recall(string $conversationId, int $limit = 50): array
     {
-        $recentLimit = config('ai-agent.memory.recent_messages', 6);
+        $recentLimit = config('ai-agent.memory.recent_messages', 4);
 
+        // Use ID ordering (deterministic) instead of created_at (can have duplicate timestamps)
         $messages = DB::table($this->messagesTable)
             ->where('conversation_id', $conversationId)
-            ->orderBy('created_at', 'desc')
-            ->limit($recentLimit)
+            ->orderBy('id', 'desc')
+            ->limit($recentLimit + 6) // Fetch extra to find a clean boundary
             ->get()
             ->reverse()
             ->values();
 
-        $history = [];
-
-        // Prepend context summary if exists
-        $summary = $this->getContextSummary($conversationId);
-        if ($summary) {
-            $history[] = [
-                'role' => 'system',
-                'content' => "[Previous conversation context]\n" . $summary,
-            ];
-        }
-
+        // Convert to array format
+        $allMessages = [];
         foreach ($messages as $msg) {
             $message = [
                 'role' => $msg->role,
@@ -72,10 +64,37 @@ class DatabaseMemory implements MemoryInterface
                 $message['tool_call_id'] = $msg->tool_call_id;
             }
 
-            $history[] = $message;
+            $allMessages[] = $message;
         }
 
-        return $history;
+        // Take last N messages, but ensure we start on a clean boundary
+        // (not in the middle of a tool sequence)
+        $total = count($allMessages);
+        $startIndex = max(0, $total - $recentLimit);
+
+        // Walk forward to find a clean start (user or system message)
+        while ($startIndex < $total) {
+            $role = $allMessages[$startIndex]['role'] ?? '';
+            if ($role === 'user' || $role === 'system') {
+                break;
+            }
+            $startIndex++;
+        }
+
+        $recentMessages = array_slice($allMessages, $startIndex);
+
+        $history = [];
+
+        // Prepend context summary if exists
+        $summary = $this->getContextSummary($conversationId);
+        if ($summary) {
+            $history[] = [
+                'role' => 'system',
+                'content' => "[Previous conversation context]\n" . $summary,
+            ];
+        }
+
+        return array_merge($history, $recentMessages);
     }
 
     public function forget(string $conversationId): void
@@ -198,17 +217,17 @@ class DatabaseMemory implements MemoryInterface
             $messages = array_map(fn($m) => is_object($m) ? (array) $m : $m, is_array($messages) ? $messages : $messages->toArray());
 
             $driverName = config('ai-agent.default', 'openai');
-            $driverConfig = config("ai-agent.drivers.{$driverName}", []);
 
             $driverClass = match ($driverName) {
                 'openai' => \LaravelAIAgent\Drivers\OpenAIDriver::class,
                 'anthropic' => \LaravelAIAgent\Drivers\AnthropicDriver::class,
                 'gemini' => \LaravelAIAgent\Drivers\GeminiDriver::class,
+                'deepseek' => \LaravelAIAgent\Drivers\DeepSeekDriver::class,
                 'openrouter' => \LaravelAIAgent\Drivers\OpenRouterDriver::class,
                 default => \LaravelAIAgent\Drivers\OpenAIDriver::class,
             };
 
-            $driver = new $driverClass($driverConfig);
+            $driver = new $driverClass();
 
             // Build conversation text for the AI
             $conversationText = '';
