@@ -14,7 +14,7 @@
 class AIAgentChat extends HTMLElement {
     static get observedAttributes() {
         return [
-            'endpoint', 'history-endpoint', 'theme', 'position', 'width', 'height',
+            'endpoint', 'history-endpoint', 'stream', 'theme', 'position', 'width', 'height',
             'rtl', 'lang', 'welcome-message', 'placeholder', 'title', 'subtitle',
             'primary-color', 'open', 'button-icon', 'button-size',
             'conversations-label', 'new-chat-label', 'no-conversations-label'
@@ -41,6 +41,10 @@ class AIAgentChat extends HTMLElement {
             daysAgo: '{n}d ago',
             error: 'Error: {msg}',
             stopped: 'Stopped',
+            thinking: 'Thinking...',
+            executing: 'Executing: {name}...',
+            executed: '{name} ✓',
+            writing: 'Writing response...',
         },
         ar: {
             title: 'مساعد ذكي',
@@ -57,6 +61,10 @@ class AIAgentChat extends HTMLElement {
             daysAgo: 'منذ {n} يوم',
             error: 'خطأ: {msg}',
             stopped: 'تم الإيقاف',
+            thinking: 'يفكر...',
+            executing: 'ينفذ: {name}...',
+            executed: '{name} ✓',
+            writing: 'يكتب الرد...',
         },
         fr: {
             title: 'Assistant IA',
@@ -73,6 +81,10 @@ class AIAgentChat extends HTMLElement {
             daysAgo: 'Il y a {n}j',
             error: 'Erreur : {msg}',
             stopped: 'Arrêté',
+            thinking: 'Réflexion...',
+            executing: 'Exécution : {name}...',
+            executed: '{name} ✓',
+            writing: 'Rédaction...',
         },
         es: {
             title: 'Asistente IA',
@@ -89,6 +101,10 @@ class AIAgentChat extends HTMLElement {
             daysAgo: 'Hace {n}d',
             error: 'Error: {msg}',
             stopped: 'Detenido',
+            thinking: 'Pensando...',
+            executing: 'Ejecutando: {name}...',
+            executed: '{name} ✓',
+            writing: 'Escribiendo...',
         },
         zh: {
             title: 'AI 助手',
@@ -105,6 +121,10 @@ class AIAgentChat extends HTMLElement {
             daysAgo: '{n}天前',
             error: '错误：{msg}',
             stopped: '已停止',
+            thinking: '思考中...',
+            executing: '执行: {name}...',
+            executed: '{name} ✓',
+            writing: '正在编写...',
         },
     };
 
@@ -228,6 +248,7 @@ class AIAgentChat extends HTMLElement {
             buttonSize: this.getAttribute('button-size') || '60px',
             persistMessages: this.hasAttribute('persist-messages'),
             historyEndpoint: this.getAttribute('history-endpoint') || null,
+            stream: this.hasAttribute('stream'),
         };
     }
 
@@ -794,6 +815,101 @@ class AIAgentChat extends HTMLElement {
                     30% { transform: translateY(-6px); }
                 }
 
+                /* Progress Block (SSE collapsible) */
+                .progress-block {
+                    margin-bottom: 8px;
+                    border-radius: 12px;
+                    overflow: hidden;
+                    background: var(--bot-bubble);
+                    border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
+                    animation: fadeInUp 0.25s ease;
+                }
+
+                .progress-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 10px 14px;
+                    cursor: pointer;
+                    user-select: none;
+                    font-size: 0.82rem;
+                    color: var(--muted);
+                    transition: background 0.2s;
+                }
+
+                .progress-header:hover {
+                    background: color-mix(in srgb, var(--primary) 5%, transparent);
+                }
+
+                .progress-arrow {
+                    font-size: 0.7rem;
+                    transition: transform 0.2s ease;
+                    display: inline-block;
+                }
+
+                .progress-block.collapsed .progress-arrow {
+                    transform: rotate(-90deg);
+                }
+
+                .progress-summary {
+                    flex: 1;
+                }
+
+                .progress-steps {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                    padding: 0 14px 10px;
+                    overflow: hidden;
+                    transition: max-height 0.3s ease, opacity 0.2s ease, padding 0.3s ease;
+                    max-height: 500px;
+                    opacity: 1;
+                }
+
+                .progress-block.collapsed .progress-steps {
+                    max-height: 0;
+                    opacity: 0;
+                    padding: 0 14px;
+                }
+
+                .progress-step {
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 5px 0;
+                    font-size: 0.8rem;
+                    color: var(--muted);
+                    animation: fadeInUp 0.2s ease;
+                    border-right: 2px solid color-mix(in srgb, var(--primary) 20%, transparent);
+                    padding-right: 10px;
+                }
+
+                [dir="ltr"] .progress-step,
+                :host(:not([rtl])) .progress-step {
+                    border-right: none;
+                    border-left: 2px solid color-mix(in srgb, var(--primary) 20%, transparent);
+                    padding-right: 0;
+                    padding-left: 10px;
+                }
+
+                .progress-step .step-icon { font-size: 0.85rem; flex-shrink: 0; }
+                .progress-step.thinking .step-icon { animation: statusPulse 1s infinite ease-in-out; }
+                .progress-step.success { color: var(--text); }
+                .progress-step.error { color: #ef4444; }
+
+                .progress-block.done { border-color: color-mix(in srgb, #22c55e 25%, transparent); }
+                .progress-block.has-error { border-color: color-mix(in srgb, #ef4444 25%, transparent); }
+
+                @keyframes statusPulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.3; }
+                }
+
+                @keyframes fadeInUp {
+                    from { opacity: 0; transform: translateY(6px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+
                 /* Input */
                 .widget-input-area {
                     padding: 12px;
@@ -1051,15 +1167,17 @@ class AIAgentChat extends HTMLElement {
     }
 
     renderMessages() {
-        return this.messages.map(msg => {
-            const content = msg.role === 'bot' ? this.parseMarkdown(msg.content) : this.escapeHtml(msg.content);
-            return `
-                <div class="message message-${msg.role}">
-                    <div class="message-content">${content}</div>
-                    <div class="message-time">${msg.time}</div>
-                </div>
-            `;
-        }).join('');
+        return this.messages.map(msg => this.renderSingleMessage(msg)).join('');
+    }
+
+    renderSingleMessage(msg) {
+        const content = msg.role === 'bot' ? this.parseMarkdown(msg.content) : this.escapeHtml(msg.content);
+        return `
+            <div class="message message-${msg.role}">
+                <div class="message-content">${content}</div>
+                <div class="message-time">${msg.time}</div>
+            </div>
+        `;
     }
 
     escapeHtml(text) {
@@ -1217,15 +1335,22 @@ class AIAgentChat extends HTMLElement {
 
         input.value = '';
         this.addMessage(message, 'user');
-        this.showTyping(true);
         this.setSending(true);
 
         try {
-            const response = await this.fetchResponse(message);
-            this.showTyping(false);
-            this.addMessage(response, 'bot');
+            if (this.config.stream) {
+                // SSE mode: show status indicator instead of typing dots
+                await this.fetchStreamResponse(message);
+            } else {
+                // Classic mode: show typing dots, wait for full response
+                this.showTyping(true);
+                const response = await this.fetchResponse(message);
+                this.showTyping(false);
+                this.addMessage(response, 'bot');
+            }
         } catch (error) {
             this.showTyping(false);
+            this.clearSteps();
             if (error.name === 'AbortError') {
                 this.addMessage(this.t('stopped'), 'bot');
             } else {
@@ -1311,10 +1436,280 @@ class AIAgentChat extends HTMLElement {
         return result || JSON.stringify(data);
     }
 
+    // ================================
+    // SSE Streaming
+    // ================================
+
+    getStreamEndpoint() {
+        const endpoint = this.config.endpoint;
+        // /ai-agent/chat → /ai-agent/chat-stream
+        if (endpoint.endsWith('/chat')) {
+            return endpoint + '-stream';
+        }
+        return endpoint + '-stream';
+    }
+
+    async fetchStreamResponse(message) {
+        this.abortController = new AbortController();
+
+        const headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+        };
+
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
+        if (csrfToken) {
+            headers['X-CSRF-TOKEN'] = csrfToken;
+        }
+
+        const response = await fetch(this.getStreamEndpoint(), {
+            method: 'POST',
+            headers,
+            credentials: 'same-origin',
+            signal: this.abortController.signal,
+            body: JSON.stringify({
+                message,
+                conversation_id: this.conversationId,
+            }),
+        });
+
+        if (!response.ok) {
+            let errorMessage = `HTTP ${response.status}`;
+            try {
+                const errorText = await response.text();
+                const errorData = JSON.parse(errorText);
+                errorMessage = errorData.error || errorData.message || errorMessage;
+            } catch (e) { }
+            throw new Error(errorMessage);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const events = this.parseSSEEvents(buffer);
+            buffer = events.remaining;
+
+            for (const event of events.parsed) {
+                this.handleSSEEvent(event.event, event.data);
+            }
+        }
+
+        this.abortController = null;
+        this._activeProgressBlock = null;
+    }
+
+    parseSSEEvents(buffer) {
+        const parsed = [];
+        const blocks = buffer.split('\n\n');
+        // Last block might be incomplete
+        const remaining = blocks.pop() || '';
+
+        for (const block of blocks) {
+            if (!block.trim()) continue;
+            let event = 'message';
+            let data = '';
+
+            for (const line of block.split('\n')) {
+                if (line.startsWith('event: ')) {
+                    event = line.slice(7).trim();
+                } else if (line.startsWith('data: ')) {
+                    data = line.slice(6);
+                }
+            }
+
+            if (data) {
+                try {
+                    parsed.push({ event, data: JSON.parse(data) });
+                } catch (e) {
+                    parsed.push({ event, data: { raw: data } });
+                }
+            }
+        }
+
+        return { parsed, remaining };
+    }
+
+    handleSSEEvent(event, data) {
+        const block = this.getOrCreateProgressBlock();
+        const stepsContainer = block.querySelector('.progress-steps');
+
+        switch (event) {
+            case 'thinking':
+                this.removeThinkingStep(stepsContainer);
+                this.addProgressStep(stepsContainer, '🤔', this.t('thinking'), 'thinking');
+                this.updateProgressHeader(block, '⏳', this.t('thinking'));
+                break;
+
+            case 'tool_start': {
+                this.removeThinkingStep(stepsContainer);
+                const label = this.getToolLabel(data);
+                this.addProgressStep(stepsContainer, '🔧', this.t('executing', { name: label }), 'running', `tool-${data.name}`);
+                this.updateProgressHeader(block, '⏳', this.t('executing', { name: label }));
+                break;
+            }
+
+            case 'tool_done': {
+                const label = this.getToolLabel(data);
+                const stepId = `tool-${data.name}`;
+                const existing = stepsContainer.querySelector(`.progress-step[data-id="${stepId}"]`);
+                if (existing) {
+                    existing.className = `progress-step ${data.success ? 'success' : 'error'}`;
+                    existing.querySelector('.step-icon').textContent = data.success ? '✅' : '❌';
+                    existing.querySelector('.step-text').textContent = data.success
+                        ? this.t('executed', { name: label })
+                        : `❌ ${label}`;
+                } else {
+                    this.addProgressStep(stepsContainer,
+                        data.success ? '✅' : '❌',
+                        data.success ? this.t('executed', { name: label }) : `❌ ${label}`,
+                        data.success ? 'success' : 'error'
+                    );
+                }
+                if (!data.success) block.classList.add('has-error');
+                break;
+            }
+
+            case 'done':
+                this.removeThinkingStep(stepsContainer);
+                this.finalizeProgressBlock(block);
+                if (data.content) {
+                    this.addMessage(data.content, 'bot');
+                }
+                this._activeProgressBlock = null;
+                break;
+
+            case 'error':
+                this.removeThinkingStep(stepsContainer);
+                block.classList.add('has-error');
+                this.addProgressStep(stepsContainer, '❌', data.message || 'Error', 'error');
+                this.finalizeProgressBlock(block, true);
+                this.addMessage(this.t('error', { msg: data.message || 'Unknown error' }), 'bot');
+                this._activeProgressBlock = null;
+                break;
+        }
+
+        const messagesContainer = this.shadowRoot.querySelector('.widget-messages');
+        if (messagesContainer) messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+        this.dispatchEvent(new CustomEvent('sse-event', {
+            detail: { event, data }
+        }));
+    }
+
+    getToolLabel(data) {
+        return data.description || this.humanizeName(data.name || '');
+    }
+
+    humanizeName(name) {
+        // showProduct → Show Product, searchProducts → Search Products
+        return name
+            .replace(/([A-Z])/g, ' $1')
+            .replace(/^./, c => c.toUpperCase())
+            .trim();
+    }
+
+    getOrCreateProgressBlock() {
+        if (this._activeProgressBlock) return this._activeProgressBlock;
+
+        const container = this.shadowRoot.querySelector('.widget-messages');
+        if (!container) return null;
+
+        const block = document.createElement('div');
+        block.className = 'progress-block';
+        block.innerHTML = `
+            <div class="progress-header">
+                <span class="progress-arrow">▼</span>
+                <span class="progress-summary">⏳ ${this.t('thinking')}</span>
+            </div>
+            <div class="progress-steps"></div>
+        `;
+
+        // Insert before typing indicator
+        const typingIndicator = container.querySelector('.typing-indicator');
+        if (typingIndicator) {
+            container.insertBefore(block, typingIndicator);
+        } else {
+            container.appendChild(block);
+        }
+
+        // Toggle collapse on header click
+        block.querySelector('.progress-header').addEventListener('click', () => {
+            block.classList.toggle('collapsed');
+        });
+
+        this._activeProgressBlock = block;
+        return block;
+    }
+
+    addProgressStep(container, icon, text, className = '', dataId = '') {
+        const step = document.createElement('div');
+        step.className = `progress-step ${className}`;
+        if (dataId) step.setAttribute('data-id', dataId);
+        step.innerHTML = `<span class="step-icon">${icon}</span><span class="step-text">${text}</span>`;
+        container.appendChild(step);
+    }
+
+    updateProgressHeader(block, icon, text) {
+        const summary = block.querySelector('.progress-summary');
+        if (summary) summary.textContent = `${icon} ${text}`;
+    }
+
+    removeThinkingStep(container) {
+        if (!container) return;
+        container.querySelectorAll('.progress-step.thinking').forEach(el => el.remove());
+    }
+
+    finalizeProgressBlock(block, hasError = false) {
+        const steps = block.querySelectorAll('.progress-step');
+        const successCount = block.querySelectorAll('.progress-step.success').length;
+        const errorCount = block.querySelectorAll('.progress-step.error').length;
+        const total = successCount + errorCount;
+
+        block.classList.add('collapsed', hasError ? 'has-error' : 'done');
+
+        const summary = block.querySelector('.progress-summary');
+        if (summary) {
+            if (hasError) {
+                summary.textContent = `❌ ${this.t('error', { msg: '' }).replace(': ', '')} (${errorCount})`;
+            } else {
+                const lang = this.config.lang;
+                const stepsWord = lang === 'ar' ? 'خطوات' : lang === 'fr' ? 'étapes' : lang === 'es' ? 'pasos' : lang === 'zh' ? '步骤' : 'steps';
+                summary.textContent = `✅ ${total} ${stepsWord}`;
+            }
+        }
+    }
+
+    clearSteps() {
+        // Only used on error/abort in sendMessage catch block
+        if (this._activeProgressBlock) {
+            this._activeProgressBlock.remove();
+            this._activeProgressBlock = null;
+        }
+    }
+
     addMessage(content, role) {
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         this.messages.push({ content, role, time });
-        this.updateMessages();
+
+        // Append only the new message to the DOM (don't re-render everything)
+        const container = this.shadowRoot.querySelector('.widget-messages');
+        if (container) {
+            const html = this.renderSingleMessage({ content, role, time });
+            const typingIndicator = container.querySelector('.typing-indicator');
+            if (typingIndicator) {
+                typingIndicator.insertAdjacentHTML('beforebegin', html);
+            } else {
+                container.insertAdjacentHTML('beforeend', html);
+            }
+            container.scrollTop = container.scrollHeight;
+        }
+
         this.saveMessages();
 
         this.dispatchEvent(new CustomEvent(role === 'user' ? 'message-sent' : 'message-received', {
@@ -1326,12 +1721,10 @@ class AIAgentChat extends HTMLElement {
         const container = this.shadowRoot.querySelector('.widget-messages');
         if (!container) return;
 
+        // Remove all messages AND progress blocks (full re-render)
+        container.querySelectorAll('.message, .progress-block').forEach(el => el.remove());
+
         const typingIndicator = container.querySelector('.typing-indicator');
-
-        // Remove old messages
-        container.querySelectorAll('.message').forEach(el => el.remove());
-
-        // Add messages HTML before typing indicator (or append if not found)
         if (typingIndicator) {
             typingIndicator.insertAdjacentHTML('beforebegin', this.renderMessages());
         } else {

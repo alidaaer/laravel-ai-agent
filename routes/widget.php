@@ -10,6 +10,10 @@ Route::middleware(config('ai-agent.widget.middleware', ['web']))
         Route::post('/chat', [ChatController::class, 'chat'])
             ->name('ai-agent.chat');
 
+        // Chat API endpoint with SSE streaming events
+        Route::post('/chat-stream', [ChatController::class, 'chatStream'])
+            ->name('ai-agent.chat-stream');
+
         // Conversation history
         Route::get('/history', [ChatController::class, 'history'])
             ->name('ai-agent.history');

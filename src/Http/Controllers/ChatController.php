@@ -54,6 +54,49 @@ class ChatController extends Controller
     }
 
     /**
+     * Handle chat message with SSE streaming events.
+     * Sends real-time progress events (thinking, tool_start, tool_done, done).
+     */
+    public function chatStream(Request $request)
+    {
+        $request->validate([
+            'message' => 'required|string|max:5000',
+            'conversation_id' => 'nullable|string|max:100',
+        ]);
+
+        $message = $request->input('message');
+        $conversationId = $request->input('conversation_id', session()->getId());
+
+        return response()->stream(function () use ($message, $conversationId, $request) {
+            $onEvent = function (string $event, array $data = []) {
+                \LaravelAIAgent\Http\SSEHelper::send($event, $data);
+            };
+
+            try {
+                $agent = Agent::driver(config('ai-agent.default'))
+                    ->conversation($conversationId)
+                    ->system(config('ai-agent.widget.system_prompt') ?? 'You are a helpful AI assistant.');
+
+                $agent->chatWithEvents($message, $onEvent);
+
+            } catch (\LaravelAIAgent\Exceptions\DriverException $e) {
+                $statusCode = $e->getHttpCode();
+                $errorMsg = match ($statusCode) {
+                    429 => 'Rate limit exceeded. Please try again later.',
+                    401 => 'Authentication failed.',
+                    403 => 'Access denied.',
+                    default => config('app.debug') ? $e->getMessage() : 'An error occurred.',
+                };
+                $onEvent('error', ['message' => $errorMsg]);
+            } catch (\Throwable $e) {
+                $onEvent('error', [
+                    'message' => config('app.debug') ? $e->getMessage() : 'An error occurred',
+                ]);
+            }
+        }, 200, \LaravelAIAgent\Http\SSEHelper::headers());
+    }
+
+    /**
      * Handle chat message for a specific agent.
      */
     public function agentChat(Request $request, string $agent)
