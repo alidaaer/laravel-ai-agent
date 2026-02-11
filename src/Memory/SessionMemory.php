@@ -39,8 +39,6 @@ class SessionMemory implements MemoryInterface
 
         // Update conversation metadata
         $this->updateMeta($conversationId, $message);
-
-        Session::save();
     }
 
     public function recall(string $conversationId, int $limit = 50): array
@@ -85,7 +83,6 @@ class SessionMemory implements MemoryInterface
     {
         Session::forget($this->prefix . $conversationId);
         Session::forget($this->metaPrefix . $conversationId);
-        Session::save();
     }
 
     public function conversations(): array

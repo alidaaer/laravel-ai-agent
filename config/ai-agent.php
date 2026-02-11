@@ -143,7 +143,7 @@ return [
         'summarize_after' => 10,
         'max_messages' => 100,
         'recent_messages' => 4,
-        'ai_summarization' => env('AI_AGENT_AI_SUMMARY', true),
+        'ai_summarization' => env('AI_AGENT_AI_SUMMARY', false),
     ],
 
     /*
@@ -309,5 +309,19 @@ You are an intelligent AI assistant with access to various tools.
    - Example: "Done! I deleted product `10` and added 'Nokia Phone' with ID `12`"
 6. Be helpful, concise, and professional
 PROMPT,
+
+    /*
+    |--------------------------------------------------------------------------
+    | Performance Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Settings to tune the performance of the AI agent.
+    |
+    */
+    'performance' => [
+        // Delay between loop iterations in milliseconds (0 = no delay)
+        // Set to 300 for Gemini or other rate-limited APIs
+        'loop_delay_ms' => env('AI_AGENT_LOOP_DELAY', 0),
+    ],
 ];
 

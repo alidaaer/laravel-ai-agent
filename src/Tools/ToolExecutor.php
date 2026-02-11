@@ -13,6 +13,11 @@ class ToolExecutor
     protected ResultTransformer $resultTransformer;
     protected \LaravelAIAgent\AgentContext $context;
 
+    /**
+     * Cache for ReflectionMethod instances to avoid repeated reflection.
+     */
+    protected static array $reflectionCache = [];
+
     public function __construct(
         protected ToolRegistry $registry,
         protected ToolValidator $validator,
@@ -95,7 +100,9 @@ class ToolExecutor
         $method = $tool['method'];
 
         try {
-            $reflection = new \ReflectionMethod($class, $method);
+            $cacheKey = $class . '::' . $method;
+            $reflection = self::$reflectionCache[$cacheKey]
+                ??= new \ReflectionMethod($class, $method);
             
             foreach ($reflection->getParameters() as $param) {
                 $type = $param->getType();

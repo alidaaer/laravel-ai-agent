@@ -199,6 +199,7 @@ class Agent
     {
         // Initialize security guard
         $security = $this->getSecurityGuard();
+        $loggingEnabled = config('ai-agent.logging.enabled', true);
         
         // Content Moderation - validate input
         if (config('ai-agent.security.enabled', true)) {
@@ -219,13 +220,15 @@ class Agent
         // Get conversation history
         $history = $memory->recall($this->conversationId);
 
-        \Illuminate\Support\Facades\Log::info('🧠 Memory state', [
-            'conversation_id' => $this->conversationId,
-            'history_count' => count($history),
-            'history_roles' => array_map(fn($m) => $m['role'] ?? 'unknown', $history),
-            'has_tool_calls_in_history' => count(array_filter($history, fn($m) => !empty($m['tool_calls']))),
-            'memory_class' => get_class($memory),
-        ]);
+        if ($loggingEnabled) {
+            \Illuminate\Support\Facades\Log::info('🧠 Memory state', [
+                'conversation_id' => $this->conversationId,
+                'history_count' => count($history),
+                'history_roles' => array_map(fn($m) => $m['role'] ?? 'unknown', $history),
+                'has_tool_calls_in_history' => count(array_filter($history, fn($m) => !empty($m['tool_calls']))),
+                'memory_class' => get_class($memory),
+            ]);
+        }
 
         // Build options
         $options = $this->options;
@@ -266,22 +269,26 @@ class Agent
         // Run the agent loop with security checks
         $response = $this->runLoop($driver, $message, $history, $options, $security, $memory);
 
-        \Illuminate\Support\Facades\Log::info('🔍 Agent runLoop result', [
-            'content_length' => strlen($response->content),
-            'content_preview' => mb_substr($response->content, 0, 200),
-            'has_tool_calls' => $response->hasToolCalls(),
-            'finish_reason' => $response->finishReason,
-        ]);
+        if ($loggingEnabled) {
+            \Illuminate\Support\Facades\Log::info('🔍 Agent runLoop result', [
+                'content_length' => strlen($response->content),
+                'content_preview' => mb_substr($response->content, 0, 200),
+                'has_tool_calls' => $response->hasToolCalls(),
+                'finish_reason' => $response->finishReason,
+            ]);
+        }
 
         // Output Sanitization - clean response
         $content = $response->content;
         if (config('ai-agent.security.enabled', true)) {
             $content = $security->sanitizeOutput($content);
 
-            \Illuminate\Support\Facades\Log::info('🔍 After sanitizeOutput', [
-                'content_length' => strlen($content),
-                'content_preview' => mb_substr($content, 0, 200),
-            ]);
+            if ($loggingEnabled) {
+                \Illuminate\Support\Facades\Log::info('🔍 After sanitizeOutput', [
+                    'content_length' => strlen($content),
+                    'content_preview' => mb_substr($content, 0, 200),
+                ]);
+            }
         }
 
         // Store assistant response
@@ -329,13 +336,16 @@ class Agent
         $tools = $this->toolRegistry->all();
         $originalMessage = $message;
         $lastToolResults = [];
+        $loggingEnabled = config('ai-agent.logging.enabled', true);
 
-        \Illuminate\Support\Facades\Log::info('🔍 runLoop start', [
-            'registered_tools' => array_keys($tools),
-            'tools_count' => count($tools),
-            'history_count' => count($history),
-            'agent_scope' => $this->agentScope,
-        ]);
+        if ($loggingEnabled) {
+            \Illuminate\Support\Facades\Log::info('🔍 runLoop start', [
+                'registered_tools' => array_keys($tools),
+                'tools_count' => count($tools),
+                'history_count' => count($history),
+                'agent_scope' => $this->agentScope,
+            ]);
+        }
 
         while ($iterations < $maxIterations) {
             $iterations++;
@@ -351,25 +361,29 @@ class Agent
             }
 
             // Call the LLM
-            \Illuminate\Support\Facades\Log::info('📡 LLM prompt', [
-                'iteration' => $iterations,
-                'tools_sent' => count($tools),
-                'tool_names_sent' => array_keys($tools),
-                'history_count' => count($history),
-                'message_preview' => mb_substr($message, 0, 100),
-                'has_system' => isset($options['system']),
-            ]);
+            if ($loggingEnabled) {
+                \Illuminate\Support\Facades\Log::info('📡 LLM prompt', [
+                    'iteration' => $iterations,
+                    'tools_sent' => count($tools),
+                    'tool_names_sent' => array_keys($tools),
+                    'history_count' => count($history),
+                    'message_preview' => mb_substr($message, 0, 100),
+                    'has_system' => isset($options['system']),
+                ]);
+            }
 
             $response = $driver->prompt($message, $tools, $history, $options);
 
-            \Illuminate\Support\Facades\Log::info('📡 LLM response', [
-                'iteration' => $iterations,
-                'content_length' => strlen($response->content),
-                'has_tool_calls' => $response->hasToolCalls(),
-                'tool_calls_count' => count($response->toolCalls),
-                'tool_call_names' => array_column($response->toolCalls, 'name'),
-                'finish_reason' => $response->finishReason,
-            ]);
+            if ($loggingEnabled) {
+                \Illuminate\Support\Facades\Log::info('📡 LLM response', [
+                    'iteration' => $iterations,
+                    'content_length' => strlen($response->content),
+                    'has_tool_calls' => $response->hasToolCalls(),
+                    'tool_calls_count' => count($response->toolCalls),
+                    'tool_call_names' => array_column($response->toolCalls, 'name'),
+                    'finish_reason' => $response->finishReason,
+                ]);
+            }
 
             // If no tool calls, we're done
             if (!$response->hasToolCalls()) {
@@ -424,14 +438,16 @@ class Agent
             $lastToolResults = $toolResults;
 
             // Log tool calls and results
-            foreach ($toolResults as $result) {
-                \Illuminate\Support\Facades\Log::info('🔧 AI Tool Call', [
-                    'tool' => $result['name'],
-                    'success' => $result['success'],
-                    'result' => $result['success'] ? $result['result'] : null,
-                    'error' => $result['success'] ? null : $result['error'],
-                    'conversation_id' => $this->conversationId,
-                ]);
+            if ($loggingEnabled) {
+                foreach ($toolResults as $result) {
+                    \Illuminate\Support\Facades\Log::info('🔧 AI Tool Call', [
+                        'tool' => $result['name'],
+                        'success' => $result['success'],
+                        'result' => $result['success'] ? $result['result'] : null,
+                        'error' => $result['success'] ? null : $result['error'],
+                        'conversation_id' => $this->conversationId,
+                    ]);
+                }
             }
 
             // For the first iteration, add the user's original message to history
@@ -472,8 +488,11 @@ class Agent
             // Continue with a message asking LLM to respond based on tool results
             $message = 'بناءً على نتيجة الأداة، أجب على سؤال المستخدم.';
             
-            // Add small delay between requests for some APIs (like Gemini)
-            usleep(300000); // 300ms delay
+            // Configurable delay between iterations (some APIs like Gemini need it)
+            $loopDelay = config('ai-agent.performance.loop_delay_ms', 0);
+            if ($loopDelay > 0) {
+                usleep($loopDelay * 1000);
+            }
         }
 
         throw new \RuntimeException("Agent exceeded maximum iterations ({$this->maxIterations})");

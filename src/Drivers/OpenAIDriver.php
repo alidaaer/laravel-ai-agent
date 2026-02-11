@@ -218,20 +218,23 @@ class OpenAIDriver extends AbstractDriver
             }
         }
 
-        \Illuminate\Support\Facades\Log::debug('🧹 sanitizeHistory', [
-            'history_count' => count($history),
-            'roles' => array_column($history, 'role'),
-            'responded_ids' => array_keys($respondedToolCallIds),
-            'assistant_tool_calls' => collect($history)
-                ->filter(fn($m) => ($m['role'] ?? '') === 'assistant' && !empty($m['tool_calls']))
-                ->map(fn($m) => collect($m['tool_calls'])->pluck('id')->toArray())
-                ->values()
-                ->toArray(),
-        ]);
+        if (config('ai-agent.logging.enabled', true)) {
+            \Illuminate\Support\Facades\Log::debug('🧹 sanitizeHistory', [
+                'history_count' => count($history),
+                'roles' => array_column($history, 'role'),
+                'responded_ids' => array_keys($respondedToolCallIds),
+                'assistant_tool_calls' => collect($history)
+                    ->filter(fn($m) => ($m['role'] ?? '') === 'assistant' && !empty($m['tool_calls']))
+                    ->map(fn($m) => collect($m['tool_calls'])->pluck('id')->toArray())
+                    ->values()
+                    ->toArray(),
+            ]);
+        }
 
         // Pass 2: build clean history
         $clean = [];
         $skipToolCallIds = [];
+        $validToolCallIds = [];
 
         foreach ($history as $msg) {
             $role = $msg['role'] ?? '';
@@ -249,6 +252,13 @@ class OpenAIDriver extends AbstractDriver
 
                 if ($allSatisfied) {
                     $clean[] = $msg;
+                    // Track valid tool_call_ids for O(1) lookup
+                    foreach ($msg['tool_calls'] as $tc) {
+                        $tcId = $tc['id'] ?? ($tc['tool_call_id'] ?? null);
+                        if ($tcId) {
+                            $validToolCallIds[$tcId] = true;
+                        }
+                    }
                 } else {
                     // Mark these tool_call_ids to skip their partial responses too
                     foreach ($msg['tool_calls'] as $tc) {
@@ -272,18 +282,8 @@ class OpenAIDriver extends AbstractDriver
                 if ($tcId && isset($skipToolCallIds[$tcId])) {
                     continue;
                 }
-                // Also skip if no preceding assistant with matching tool_calls in $clean
-                $hasPrecedingAssistant = false;
-                for ($i = count($clean) - 1; $i >= 0; $i--) {
-                    if (($clean[$i]['role'] ?? '') === 'assistant' && !empty($clean[$i]['tool_calls'])) {
-                        $hasPrecedingAssistant = true;
-                        break;
-                    }
-                    if (($clean[$i]['role'] ?? '') !== 'tool') {
-                        break;
-                    }
-                }
-                if ($hasPrecedingAssistant) {
+                // O(1) lookup instead of O(n) reverse scan
+                if ($tcId && isset($validToolCallIds[$tcId])) {
                     $clean[] = $msg;
                 }
                 continue;
