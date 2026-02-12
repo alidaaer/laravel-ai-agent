@@ -1679,8 +1679,13 @@ class AIAgentChat extends HTMLElement {
                 summary.textContent = `❌ ${this.t('error', { msg: '' }).replace(': ', '')} (${errorCount})`;
             } else {
                 const lang = this.config.lang;
-                const stepsWord = lang === 'ar' ? 'خطوات' : lang === 'fr' ? 'étapes' : lang === 'es' ? 'pasos' : lang === 'zh' ? '步骤' : 'steps';
-                summary.textContent = `✅ ${total} ${stepsWord}`;
+                const stepsWord = lang === 'ar' ? 'مهام' : lang === 'fr' ? 'tâches' : lang === 'es' ? 'tareas' : lang === 'zh' ? '任务' : 'tasks';
+                //hide summary if total is 0
+                if (total === 0) {
+                    block.style.display = 'none';
+                } else {
+                    summary.textContent = `✅ ${total} ${stepsWord}`;
+                }
             }
         }
     }
