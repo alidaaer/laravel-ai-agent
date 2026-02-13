@@ -52,6 +52,9 @@ class OpenAIDriver extends AbstractDriver
         if (isset($options['max_tokens'])) {
             $payload['max_tokens'] = $options['max_tokens'];
         }
+        if (isset($options['response_format'])) {
+            $payload['response_format'] = $options['response_format'];
+        }
 
         $response = $this->request(
             $this->baseUrl . '/chat/completions',
@@ -216,19 +219,6 @@ class OpenAIDriver extends AbstractDriver
             if (($msg['role'] ?? '') === 'tool' && isset($msg['tool_call_id'])) {
                 $respondedToolCallIds[$msg['tool_call_id']] = true;
             }
-        }
-
-        if (config('ai-agent.logging.enabled', true)) {
-            \Illuminate\Support\Facades\Log::debug('🧹 sanitizeHistory', [
-                'history_count' => count($history),
-                'roles' => array_column($history, 'role'),
-                'responded_ids' => array_keys($respondedToolCallIds),
-                'assistant_tool_calls' => collect($history)
-                    ->filter(fn($m) => ($m['role'] ?? '') === 'assistant' && !empty($m['tool_calls']))
-                    ->map(fn($m) => collect($m['tool_calls'])->pluck('id')->toArray())
-                    ->values()
-                    ->toArray(),
-            ]);
         }
 
         // Pass 2: build clean history

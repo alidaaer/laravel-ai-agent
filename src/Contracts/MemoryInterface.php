@@ -5,6 +5,12 @@ namespace LaravelAIAgent\Contracts;
 interface MemoryInterface
 {
     /**
+     * Scope this memory instance to a specific agent.
+     * When set, conversations are isolated per agent.
+     */
+    public function forAgent(string $agentName): static;
+
+    /**
      * Store a message in the conversation history.
      *
      * @param string $conversationId

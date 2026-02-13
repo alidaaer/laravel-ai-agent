@@ -13,4 +13,9 @@ class DriverException extends Exception
     ) {
         parent::__construct($message, $code);
     }
+
+    public function getHttpCode(): int
+    {
+        return $this->getCode() ?: 500;
+    }
 }

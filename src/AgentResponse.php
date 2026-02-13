@@ -28,6 +28,16 @@ class AgentResponse
     }
 
     /**
+     * Parse the response content as JSON (for structured output).
+     * Returns the decoded array, or null if content is not valid JSON.
+     */
+    public function json(): ?array
+    {
+        $decoded = json_decode($this->content, true);
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    /**
      * Get the response as an array.
      */
     public function toArray(): array

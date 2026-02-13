@@ -9,6 +9,13 @@ class SessionMemory implements MemoryInterface
 {
     protected string $prefix = 'ai_agent_memory_';
     protected string $metaPrefix = 'ai_agent_meta_';
+    protected ?string $agentName = null;
+
+    public function forAgent(string $agentName): static
+    {
+        $this->agentName = $agentName;
+        return $this;
+    }
 
     public function remember(string $conversationId, array $message): void
     {
@@ -92,7 +99,17 @@ class SessionMemory implements MemoryInterface
 
         foreach ($all as $key => $value) {
             if (str_starts_with($key, $this->prefix)) {
-                $conversations[] = substr($key, strlen($this->prefix));
+                $id = substr($key, strlen($this->prefix));
+
+                // Filter by agent if scoped
+                if ($this->agentName) {
+                    $meta = Session::get($this->metaPrefix . $id, []);
+                    if (($meta['agent_name'] ?? null) !== $this->agentName) {
+                        continue;
+                    }
+                }
+
+                $conversations[] = $id;
             }
         }
 
@@ -109,8 +126,14 @@ class SessionMemory implements MemoryInterface
         foreach ($all as $key => $value) {
             if (str_starts_with($key, $this->metaPrefix)) {
                 $id = substr($key, strlen($this->metaPrefix));
-                $metaIds[$id] = true;
                 $meta = is_array($value) ? $value : [];
+
+                // Filter by agent if scoped
+                if ($this->agentName && ($meta['agent_name'] ?? null) !== $this->agentName) {
+                    continue;
+                }
+
+                $metaIds[$id] = true;
                 $conversations[] = [
                     'id' => $id,
                     'title' => $meta['title'] ?? 'New conversation',
@@ -120,16 +143,19 @@ class SessionMemory implements MemoryInterface
         }
 
         // Backward compat: include memory keys without meta (older conversations)
-        foreach ($all as $key => $value) {
-            if (str_starts_with($key, $this->prefix)) {
-                $id = substr($key, strlen($this->prefix));
-                if (!isset($metaIds[$id]) && is_array($value) && !empty($value)) {
-                    $firstUserMsg = collect($value)->firstWhere('role', 'user');
-                    $conversations[] = [
-                        'id' => $id,
-                        'title' => $firstUserMsg ? mb_substr($firstUserMsg['content'], 0, 60) : 'New conversation',
-                        'updated_at' => now()->toISOString(),
-                    ];
+        // Only include unscoped conversations when no agent filter is set
+        if (!$this->agentName) {
+            foreach ($all as $key => $value) {
+                if (str_starts_with($key, $this->prefix)) {
+                    $id = substr($key, strlen($this->prefix));
+                    if (!isset($metaIds[$id]) && is_array($value) && !empty($value)) {
+                        $firstUserMsg = collect($value)->firstWhere('role', 'user');
+                        $conversations[] = [
+                            'id' => $id,
+                            'title' => $firstUserMsg ? mb_substr($firstUserMsg['content'], 0, 60) : 'New conversation',
+                            'updated_at' => now()->toISOString(),
+                        ];
+                    }
                 }
             }
         }
@@ -294,6 +320,11 @@ class SessionMemory implements MemoryInterface
         // Set title from first user message
         if (empty($meta['title']) && $message['role'] === 'user') {
             $meta['title'] = mb_substr($message['content'], 0, 60);
+        }
+
+        // Store agent name for scoping
+        if ($this->agentName && !isset($meta['agent_name'])) {
+            $meta['agent_name'] = $this->agentName;
         }
 
         $meta['updated_at'] = now()->toISOString();

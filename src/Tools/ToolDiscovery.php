@@ -158,10 +158,12 @@ class ToolDiscovery
      * Discover tools filtered for a specific agent.
      * Only returns tools where agents is null (all) or contains the agent name.
      *
+     * The agents parameter supports both formats:
+     *   - Class reference: agents: [AdminAgent::class]  (recommended — IDE-friendly)
+     *   - Route name string: agents: ['admin-agent']     (simple alternative)
+     *
      * Security: If a tool name has both unscoped (agents: null) and scoped versions,
      * the unscoped version is blocked to prevent bypassing agent restrictions.
-     * Explicitly scoped versions (agents: ['shop'], agents: ['admin']) are always
-     * evaluated independently — allowing intentional per-agent implementations.
      */
     public function discoverForAgent(array $classes, string $agentName): array
     {
@@ -186,9 +188,25 @@ class ToolDiscovery
                 return true;
             }
 
-            // Scoped tool: allow only if this agent is in the list
-            return in_array($agentName, $tool['agents'], true);
+            // Scoped tool: normalize agents to route names, then check
+            $normalizedAgents = array_map(fn($a) => $this->resolveAgentName($a), $tool['agents']);
+            return in_array($agentName, $normalizedAgents, true);
         }));
+    }
+
+    /**
+     * Resolve an agent identifier to a route name.
+     * Supports class references (AdminAgent::class) and plain strings ('admin-agent').
+     */
+    protected function resolveAgentName(string $agent): string
+    {
+        // If it's a class that extends BaseAgent, get its routeName()
+        if (class_exists($agent) && is_subclass_of($agent, \LaravelAIAgent\BaseAgent::class)) {
+            return $agent::routeName();
+        }
+
+        // Otherwise treat as a plain route name string
+        return $agent;
     }
 
     /**

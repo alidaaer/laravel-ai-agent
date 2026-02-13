@@ -6,6 +6,11 @@ use LaravelAIAgent\Contracts\MemoryInterface;
 
 class NullMemory implements MemoryInterface
 {
+    public function forAgent(string $agentName): static
+    {
+        return $this;
+    }
+
     public function remember(string $conversationId, array $message): void
     {
         // Do nothing - no memory

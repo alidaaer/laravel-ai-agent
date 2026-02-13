@@ -2,44 +2,86 @@
 
 namespace {{ namespace }};
 
-use LaravelAIAgent\Agent;
+use LaravelAIAgent\BaseAgent;
 
-class {{ class }} extends Agent
+class {{ class }} extends BaseAgent
 {
     /**
-     * The agent name.
+     * The instructions (system prompt) for this agent.
      */
-    protected string $name = '{{ class }}';
-
-    /**
-     * The system prompt for this agent.
-     */
-    protected ?string $systemPrompt = <<<PROMPT
-        You are a helpful AI assistant.
-        Respond in a friendly and professional manner.
-    PROMPT;
-
-    /**
-     * Tool classes this agent can use.
-     * Example: [\App\Services\OrderService::class]
-     */
-    protected array $toolClasses = [
-        // Add your tool classes here
-    ];
-
-    /**
-     * Boot the agent.
-     */
-    public function __construct()
+    public function instructions(): string
     {
-        parent::__construct($this->name);
-
-        if ($this->systemPrompt) {
-            $this->system($this->systemPrompt);
-        }
-
-        if (!empty($this->toolClasses)) {
-            $this->tools($this->toolClasses);
-        }
+        return 'You are a helpful AI assistant. Respond in a friendly and professional manner.';
     }
+
+    /**
+     * The tool service classes this agent can use.
+     * Tools are auto-discovered using #[AsAITool] attribute.
+     * Return empty array to use auto-discovery from config paths.
+     *
+     * @return array<class-string>
+     */
+    public function tools(): array
+    {
+        return [
+            // \App\Services\YourService::class,
+        ];
+    }
+
+    // =========================================================================
+    // Optional: Override driver, model, middleware, schema, etc.
+    // =========================================================================
+    //
+    // public function driver(): ?string { return 'openai'; }
+    // public function model(): ?string { return 'gpt-4o-mini'; }
+    // public function temperature(): ?float { return 0.7; }
+    //
+    // public function middleware(): array {
+    //     return [
+    //         \App\AI\Middleware\LogPrompts::class,
+    //     ];
+    // }
+    //
+    // public function schema(): ?array {
+    //     return [
+    //         'type' => 'object',
+    //         'properties' => [
+    //             'answer' => ['type' => 'string', 'description' => 'The answer'],
+    //             'confidence' => ['type' => 'number', 'description' => 'Confidence 0-1'],
+    //         ],
+    //         'required' => ['answer'],
+    //     ];
+    // }
+
+    // =========================================================================
+    // Optional: Routing — How this agent is exposed via HTTP
+    // Default: auto-generated from class name (e.g. OrderManager → order-manager)
+    // =========================================================================
+    //
+    // public static function routeName(): string { return 'order-manager'; }
+    // public function routeMiddleware(): array { return ['web', 'auth']; }
+    // public function routePrefix(): string { return 'ai-agent'; }
+
+    // =========================================================================
+    // Optional: Widget — Customize the chat widget appearance
+    // Only override what you need, defaults are provided for everything.
+    // =========================================================================
+    //
+    // public function widgetConfig(): array
+    // {
+    //     return [
+    //         'title' => 'AI Assistant',
+    //         'subtitle' => 'How can I help you?',
+    //         'theme' => 'dark',           // 'dark' or 'light'
+    //         'lang' => 'en',              // 'en', 'ar', 'fr', 'es', 'zh'
+    //         'placeholder' => 'Type a message...',
+    //         'welcome_message' => 'Hello! How can I help you today?',
+    //         'primary_color' => '#6366f1',
+    //         'position' => 'bottom-right', // 'bottom-right', 'bottom-left', 'top-right', 'top-left'
+    //         'width' => '400px',
+    //         'height' => '600px',
+    //         'button_icon' => '💬',       // URL or emoji
+    //         'button_size' => '60px',
+    //     ];
+    // }
 }

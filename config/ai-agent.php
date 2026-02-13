@@ -96,20 +96,11 @@ return [
     |
     */
     'agents' => [
-        // 'shop' => [
-        //     'driver' => null,                    // null = use default driver
-        //     'model' => null,                     // null = use driver's default model
-        //     'system_prompt' => 'You are a helpful shop assistant',
-        //     'middleware' => ['api'],
-        //     'prefix' => 'ai-agent',              // URL prefix
-        // ],
-        // 'admin' => [
-        //     'driver' => null,
-        //     'model' => null,
-        //     'system_prompt' => 'You are an admin assistant with full access',
-        //     'middleware' => ['api', 'auth', 'admin'],
-        //     'prefix' => 'ai-agent',
-        // ],
+        // Register class-based agents here. Each agent gets its own routes automatically.
+        // All configuration (instructions, tools, middleware, widget) lives in the class itself.
+        //
+        // \App\AI\Agents\ShopAssistant::class,
+        // \App\AI\Agents\AdminAgent::class,
     ],
 
     /*

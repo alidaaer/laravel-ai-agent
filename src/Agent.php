@@ -34,6 +34,8 @@ class Agent
     protected array $context = [];
     protected array $options = [];
     protected int $maxIterations = 10;
+    protected array $middleware = [];
+    protected ?array $structuredSchema = null;
 
     /**
      * Create a new Agent instance.
@@ -193,6 +195,27 @@ class Agent
     }
 
     /**
+     * Set middleware pipeline for this agent.
+     *
+     * @param array<class-string|object> $middleware
+     */
+    public function withMiddleware(array $middleware): self
+    {
+        $this->middleware = $middleware;
+        return $this;
+    }
+
+    /**
+     * Set structured output schema (JSON Schema).
+     * The AI will respond in JSON matching this schema.
+     */
+    public function structured(?array $schema): self
+    {
+        $this->structuredSchema = $schema;
+        return $this;
+    }
+
+    /**
      * Send a message and get a response.
      */
     public function chat(string $message): string
@@ -263,11 +286,47 @@ class Agent
             $options['system'] = implode("\n\n---\n\n", $systemParts);
         }
 
+        // Add structured output schema if set
+        if ($this->structuredSchema) {
+            $options['response_format'] = [
+                'type' => 'json_schema',
+                'json_schema' => [
+                    'name' => 'structured_output',
+                    'strict' => true,
+                    'schema' => $this->structuredSchema,
+                ],
+            ];
+        }
+
         // Store user message
         $memory->remember($this->conversationId, ['role' => 'user', 'content' => $message]);
 
-        // Run the agent loop with security checks
-        $response = $this->runLoop($driver, $message, $history, $options, $security, $memory);
+        // Apply middleware pipeline if configured
+        if (!empty($this->middleware)) {
+            $prompt = new AgentPrompt(
+                message: $message,
+                system: $options['system'] ?? null,
+                history: $history,
+                options: $options,
+                tools: array_keys($this->toolRegistry->all()),
+                conversationId: $this->conversationId,
+            );
+
+            $response = app(\Illuminate\Pipeline\Pipeline::class)
+                ->send($prompt)
+                ->through($this->middleware)
+                ->then(function (AgentPrompt $prompt) use ($driver, $security, $memory) {
+                    // Use prompt's options (middleware may have modified them)
+                    $opts = $prompt->options;
+                    if ($prompt->system) {
+                        $opts['system'] = $prompt->system;
+                    }
+                    return $this->runLoop($driver, $prompt->message, $prompt->history, $opts, $security, $memory);
+                });
+        } else {
+            // Run the agent loop with security checks (no middleware)
+            $response = $this->runLoop($driver, $message, $history, $options, $security, $memory);
+        }
 
         if ($loggingEnabled) {
             \Illuminate\Support\Facades\Log::info('🔍 Agent runLoop result', [
@@ -767,6 +826,11 @@ class Agent
         if ($this->memory === null) {
             $driver = config('ai-agent.memory.driver', 'session');
             $this->memory = $this->resolveMemory($driver);
+
+            // Scope memory to this agent for conversation isolation
+            if ($this->agentScope) {
+                $this->memory->forAgent($this->agentScope);
+            }
         }
 
         return $this->memory;

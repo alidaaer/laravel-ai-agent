@@ -45,6 +45,7 @@ class AIAgentChat extends HTMLElement {
             executing: 'Executing: {name}...',
             executed: '{name} ✓',
             writing: 'Writing response...',
+            listening: 'Listening...',
         },
         ar: {
             title: 'مساعد ذكي',
@@ -65,6 +66,7 @@ class AIAgentChat extends HTMLElement {
             executing: 'ينفذ: {name}...',
             executed: '{name} ✓',
             writing: 'يكتب الرد...',
+            listening: 'أستمع...',
         },
         fr: {
             title: 'Assistant IA',
@@ -85,6 +87,7 @@ class AIAgentChat extends HTMLElement {
             executing: 'Exécution : {name}...',
             executed: '{name} ✓',
             writing: 'Rédaction...',
+            listening: 'Écoute...',
         },
         es: {
             title: 'Asistente IA',
@@ -105,6 +108,7 @@ class AIAgentChat extends HTMLElement {
             executing: 'Ejecutando: {name}...',
             executed: '{name} ✓',
             writing: 'Escribiendo...',
+            listening: 'Escuchando...',
         },
         zh: {
             title: 'AI 助手',
@@ -125,6 +129,7 @@ class AIAgentChat extends HTMLElement {
             executing: '执行: {name}...',
             executed: '{name} ✓',
             writing: '正在编写...',
+            listening: '正在聆听...',
         },
     };
 
@@ -137,8 +142,11 @@ class AIAgentChat extends HTMLElement {
         this.messages = [];
         this.isTyping = false;
         this.isSending = false;
+        this.isRecording = false;
+        this.recognition = null;
         this.abortController = null;
         this.conversationId = this.generateId();
+        this._speechSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
     }
 
     // ================================
@@ -194,8 +202,12 @@ class AIAgentChat extends HTMLElement {
     }
 
     attributeChangedCallback(name, oldValue, newValue) {
-        if (oldValue !== newValue) {
-            this.render();
+        if (oldValue !== newValue && this.isConnected) {
+            if (this._renderFrame) cancelAnimationFrame(this._renderFrame);
+            this._renderFrame = requestAnimationFrame(() => {
+                this.render();
+                this.setupEventListeners();
+            });
         }
     }
 
@@ -371,9 +383,9 @@ class AIAgentChat extends HTMLElement {
         // Escape HTML
         html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-        // Code blocks ```
+        // Code blocks ``` with copy button wrapper
         html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-            return `<pre class="md-code-block"><code>${code.trim()}</code></pre>`;
+            return `<div class="md-code-wrapper"><button class="md-copy-btn">Copy</button><pre class="md-code-block"><code>${code.trim()}</code></pre></div>`;
         });
 
         // Inline code `code`
@@ -409,8 +421,11 @@ class AIAgentChat extends HTMLElement {
         // Blockquotes
         html = html.replace(/^> (.+)$/gm, '<blockquote class="md-quote">$1</blockquote>');
 
-        // Links [text](url)
-        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="md-link">$1</a>');
+        // Links [text](url) — sanitized to prevent javascript: XSS
+        html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, href) => {
+            const safe = /^(https?:\/\/|mailto:|#|\/)/.test(href.trim()) ? href : '#';
+            return `<a href="${safe}" target="_blank" rel="noopener" class="md-link">${text}</a>`;
+        });
 
         // Horizontal rule
         html = html.replace(/^---$/gm, '<hr class="md-hr">');
@@ -502,7 +517,7 @@ class AIAgentChat extends HTMLElement {
                     --table-row: ${themeStyles.tableRow};
                     --table-row-alt: ${themeStyles.tableRowAlt};
                     
-                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                    font-family: inherit;
                     direction: ${rtl ? 'rtl' : 'ltr'};
                 }
 
@@ -780,6 +795,31 @@ class AIAgentChat extends HTMLElement {
                     text-decoration: underline;
                 }
 
+                /* Code copy button */
+                .md-code-wrapper {
+                    position: relative;
+                }
+
+                .md-copy-btn {
+                    position: absolute;
+                    top: 6px;
+                    ${rtl ? 'left' : 'right'}: 6px;
+                    background: var(--border);
+                    border: none;
+                    color: var(--muted);
+                    padding: 4px 8px;
+                    border-radius: 6px;
+                    font-size: 0.7rem;
+                    cursor: pointer;
+                    opacity: 0;
+                    transition: opacity 0.2s, background 0.2s;
+                    font-family: inherit;
+                }
+
+                .md-code-wrapper:hover .md-copy-btn { opacity: 1; }
+                .md-copy-btn:hover { background: var(--primary); color: #fff; }
+                .md-copy-btn.copied { background: #22c55e; color: #fff; opacity: 1; }
+
                 /* Horizontal rule */
                 .md-hr {
                     border: none;
@@ -921,23 +961,30 @@ class AIAgentChat extends HTMLElement {
 
                 .widget-input {
                     flex: 1;
-                    padding: 12px 16px;
+                    padding: 10px 16px;
                     border: 1px solid var(--border);
-                    border-radius: 24px;
+                    border-radius: 20px;
                     background: var(--input-bg);
                     color: var(--text);
                     font-size: 0.9rem;
+                    font-family: inherit;
                     outline: none;
                     transition: border-color 0.2s;
+                    resize: none;
+                    min-height: 44px;
+                    max-height: 120px;
+                    overflow-y: auto;
+                    line-height: 1.5;
                 }
 
                 .widget-input:focus { border-color: var(--primary); }
 
                 .widget-input::placeholder { color: var(--muted); }
 
-                .widget-send {
+                .widget-send, .widget-mic {
                     width: 44px;
                     height: 44px;
+                    min-width: 44px;
                     border-radius: 50%;
                     background: var(--primary);
                     border: none;
@@ -950,9 +997,22 @@ class AIAgentChat extends HTMLElement {
                     justify-content: center;
                 }
 
-                .widget-send:hover { background: var(--primary-dark); }
+                .widget-send:hover, .widget-mic:hover { background: var(--primary-dark); }
                 .widget-send.stop { background: #ef4444; }
                 .widget-send.stop:hover { background: #dc2626; }
+
+                .widget-mic { background: var(--border); color: var(--muted); }
+                .widget-mic:hover { background: var(--primary); color: #fff; }
+                .widget-mic.recording {
+                    background: #ef4444;
+                    color: #fff;
+                    animation: micPulse 1.2s infinite ease-in-out;
+                }
+
+                @keyframes micPulse {
+                    0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+                    50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+                }
 
                 .widget-input:disabled { opacity: 0.6; cursor: not-allowed; }
 
@@ -1151,12 +1211,13 @@ class AIAgentChat extends HTMLElement {
                     </div>
 
                     <div class="widget-input-area" part="input-area">
-                        <input 
-                            type="text" 
+                        <textarea 
                             class="widget-input" 
                             placeholder="${placeholder}"
                             part="input"
-                        >
+                            rows="1"
+                        ></textarea>
+                        ${this._speechSupported ? `<button class="widget-mic" part="mic-button" title="${this.t('listening')}"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg></button>` : ''}
                         <button class="widget-send" part="send-button">
                             ${rtl ? '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="transform: scaleX(-1);"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg>' : '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-send-horizontal-icon lucide-send-horizontal"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg>'}
                         </button>
@@ -1277,9 +1338,14 @@ class AIAgentChat extends HTMLElement {
             this.isSending ? this.stopMessage() : this.sendMessage();
         });
 
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') this.sendMessage();
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.sendMessage();
+            }
         });
+
+        input.addEventListener('input', () => this.autoResizeInput(input));
 
         // Conversations panel
         const convBtn = this.shadowRoot.querySelector('.widget-conv-btn');
@@ -1289,6 +1355,24 @@ class AIAgentChat extends HTMLElement {
         if (convBtn) convBtn.addEventListener('click', () => this.showConversations());
         if (backBtn) backBtn.addEventListener('click', () => this.hideConversations());
         if (newBtn) newBtn.addEventListener('click', () => this.newConversation());
+
+        // Voice input
+        const micBtn = this.shadowRoot.querySelector('.widget-mic');
+        if (micBtn) {
+            micBtn.addEventListener('click', () => this.toggleVoice());
+        }
+
+        // Keyboard shortcuts
+        this.shadowRoot.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const panel = this.shadowRoot.querySelector('.conversations-panel');
+                if (panel && panel.classList.contains('open')) {
+                    this.hideConversations();
+                } else {
+                    this.close();
+                }
+            }
+        });
     }
 
     // ================================
@@ -1333,7 +1417,7 @@ class AIAgentChat extends HTMLElement {
 
         if (!message || this.isSending) return;
 
-        input.value = '';
+        this.resetInput();
         this.addMessage(message, 'user');
         this.setSending(true);
 
@@ -1713,6 +1797,9 @@ class AIAgentChat extends HTMLElement {
                 container.insertAdjacentHTML('beforeend', html);
             }
             container.scrollTop = container.scrollHeight;
+
+            // Bind copy buttons for code blocks in bot messages
+            if (role === 'bot') this.setupCopyButtons();
         }
 
         this.saveMessages();
@@ -1738,6 +1825,9 @@ class AIAgentChat extends HTMLElement {
 
         // Scroll to bottom
         container.scrollTop = container.scrollHeight;
+
+        // Bind copy buttons for code blocks
+        this.setupCopyButtons();
     }
 
     showTyping(show) {
@@ -1911,6 +2001,134 @@ class AIAgentChat extends HTMLElement {
 
     generateId() {
         return 'chat_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // ================================
+    // Voice Input (Web Speech API)
+    // ================================
+
+    getSpeechLang() {
+        const map = {
+            ar: 'ar-SA', en: 'en-US', fr: 'fr-FR',
+            es: 'es-ES', zh: 'zh-CN', he: 'he-IL',
+            fa: 'fa-IR', ur: 'ur-PK', de: 'de-DE',
+            ja: 'ja-JP', ko: 'ko-KR', pt: 'pt-BR',
+            ru: 'ru-RU', tr: 'tr-TR', it: 'it-IT',
+        };
+        return map[this.lang] || this.lang;
+    }
+
+    toggleVoice() {
+        if (this.isRecording) {
+            this.stopVoice();
+        } else {
+            this.startVoice();
+        }
+    }
+
+    startVoice() {
+        if (!this._speechSupported || this.isSending) return;
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        this.recognition = new SpeechRecognition();
+        this.recognition.lang = this.getSpeechLang();
+        this.recognition.interimResults = true;
+        this.recognition.continuous = false;
+        this.recognition.maxAlternatives = 1;
+
+        const input = this.shadowRoot.querySelector('.widget-input');
+        const micBtn = this.shadowRoot.querySelector('.widget-mic');
+        const prevValue = input.value;
+
+        this.recognition.onstart = () => {
+            this.isRecording = true;
+            if (micBtn) micBtn.classList.add('recording');
+            if (input) input.placeholder = this.t('listening');
+        };
+
+        this.recognition.onresult = (event) => {
+            let interim = '';
+            let final = '';
+            for (let i = 0; i < event.results.length; i++) {
+                if (event.results[i].isFinal) {
+                    final += event.results[i][0].transcript;
+                } else {
+                    interim += event.results[i][0].transcript;
+                }
+            }
+
+            if (input) {
+                const prefix = prevValue ? prevValue + ' ' : '';
+                input.value = prefix + (final || interim);
+                this.autoResizeInput(input);
+            }
+        };
+
+        this.recognition.onerror = (event) => {
+            console.warn('AI Agent: Speech recognition error', event.error);
+            this.stopVoice();
+        };
+
+        this.recognition.onend = () => {
+            this.stopVoice();
+            // Auto-focus input after recording
+            if (input) input.focus();
+        };
+
+        try {
+            this.recognition.start();
+        } catch (e) {
+            console.warn('AI Agent: Could not start speech recognition', e);
+            this.stopVoice();
+        }
+    }
+
+    stopVoice() {
+        this.isRecording = false;
+        const micBtn = this.shadowRoot.querySelector('.widget-mic');
+        if (micBtn) micBtn.classList.remove('recording');
+
+        const input = this.shadowRoot.querySelector('.widget-input');
+        if (input) input.placeholder = this.config.placeholder;
+
+        if (this.recognition) {
+            try { this.recognition.stop(); } catch (e) { /* ignore */ }
+            this.recognition = null;
+        }
+    }
+
+    setupCopyButtons() {
+        const container = this.shadowRoot.querySelector('.widget-messages');
+        if (!container) return;
+        container.querySelectorAll('.md-copy-btn').forEach(btn => {
+            if (btn._bound) return;
+            btn._bound = true;
+            btn.addEventListener('click', () => {
+                const code = btn.parentElement.querySelector('code');
+                if (!code) return;
+                navigator.clipboard.writeText(code.textContent).then(() => {
+                    btn.textContent = '✓';
+                    btn.classList.add('copied');
+                    setTimeout(() => {
+                        btn.textContent = 'Copy';
+                        btn.classList.remove('copied');
+                    }, 2000);
+                });
+            });
+        });
+    }
+
+    autoResizeInput(el) {
+        el.style.height = 'auto';
+        el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+    }
+
+    resetInput() {
+        const input = this.shadowRoot.querySelector('.widget-input');
+        if (input) {
+            input.value = '';
+            input.style.height = 'auto';
+        }
     }
 
     // Public API

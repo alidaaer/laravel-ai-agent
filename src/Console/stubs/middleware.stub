@@ -1,0 +1,27 @@
+<?php
+
+namespace {{ namespace }};
+
+use Closure;
+use LaravelAIAgent\AgentPrompt;
+use LaravelAIAgent\AgentResponse;
+
+class {{ class }}
+{
+    /**
+     * Handle the agent prompt.
+     */
+    public function handle(AgentPrompt $prompt, Closure $next): AgentResponse
+    {
+        // Before: modify the prompt before it reaches the AI
+        // $prompt->message = '...';
+        // $prompt->system = '...';
+
+        $response = $next($prompt);
+
+        // After: modify or inspect the response
+        // Log::info('Agent responded', ['content' => $response->content]);
+
+        return $response;
+    }
+}

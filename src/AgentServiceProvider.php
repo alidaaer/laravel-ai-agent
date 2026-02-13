@@ -111,6 +111,7 @@ class AgentServiceProvider extends ServiceProvider
             $this->commands([
                 Console\ChatCommand::class,
                 Console\MakeAgentCommand::class,
+                Console\MakeMiddlewareCommand::class,
             ]);
         }
     }
@@ -126,13 +127,38 @@ class AgentServiceProvider extends ServiceProvider
             return;
         }
 
-        foreach ($agents as $agentName => $agentConfig) {
-            \Illuminate\Support\Facades\Route::middleware($agentConfig['middleware'] ?? ['api'])
-                ->prefix($agentConfig['prefix'] ?? 'ai-agent')
-                ->group(function () use ($agentName) {
-                    \Illuminate\Support\Facades\Route::post("/{$agentName}/chat", [Http\Controllers\ChatController::class, 'agentChat'])
-                        ->name("ai-agent.{$agentName}.chat")
-                        ->defaults('agent', $agentName);
+        foreach ($agents as $agentClass) {
+            if (!is_string($agentClass) || !is_subclass_of($agentClass, BaseAgent::class)) {
+                continue;
+            }
+
+            $instance = new $agentClass;
+            $name = $agentClass::routeName();
+            $middleware = $instance->routeMiddleware();
+            $prefix = $instance->routePrefix();
+
+            \Illuminate\Support\Facades\Route::middleware($middleware)
+                ->prefix($prefix)
+                ->group(function () use ($name, $agentClass) {
+                    \Illuminate\Support\Facades\Route::post("/{$name}/chat", [Http\Controllers\ChatController::class, 'agentChat'])
+                        ->name("ai-agent.{$name}.chat")
+                        ->defaults('agent', $name);
+
+                    \Illuminate\Support\Facades\Route::post("/{$name}/chat-stream", [Http\Controllers\ChatController::class, 'agentChatStream'])
+                        ->name("ai-agent.{$name}.chat-stream")
+                        ->defaults('agent', $name);
+
+                    \Illuminate\Support\Facades\Route::get("/{$name}/conversations", [Http\Controllers\ChatController::class, 'agentConversations'])
+                        ->name("ai-agent.{$name}.conversations")
+                        ->defaults('agent', $name);
+
+                    \Illuminate\Support\Facades\Route::get("/{$name}/history", [Http\Controllers\ChatController::class, 'agentHistory'])
+                        ->name("ai-agent.{$name}.history")
+                        ->defaults('agent', $name);
+
+                    \Illuminate\Support\Facades\Route::delete("/{$name}/history", [Http\Controllers\ChatController::class, 'agentClear'])
+                        ->name("ai-agent.{$name}.clear")
+                        ->defaults('agent', $name);
                 });
         }
     }

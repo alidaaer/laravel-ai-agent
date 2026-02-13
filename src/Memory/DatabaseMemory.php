@@ -9,6 +9,13 @@ class DatabaseMemory implements MemoryInterface
 {
     protected string $conversationsTable = 'agent_conversations';
     protected string $messagesTable = 'agent_messages';
+    protected ?string $agentName = null;
+
+    public function forAgent(string $agentName): static
+    {
+        $this->agentName = $agentName;
+        return $this;
+    }
 
     public function remember(string $conversationId, array $message): void
     {
@@ -110,16 +117,26 @@ class DatabaseMemory implements MemoryInterface
 
     public function conversations(): array
     {
-        return DB::table($this->conversationsTable)
-            ->orderBy('updated_at', 'desc')
+        $query = DB::table($this->conversationsTable);
+
+        if ($this->agentName) {
+            $query->where('agent_name', $this->agentName);
+        }
+
+        return $query->orderBy('updated_at', 'desc')
             ->pluck('id')
             ->toArray();
     }
 
     public function conversationsWithMeta(): array
     {
-        $conversations = DB::table($this->conversationsTable)
-            ->orderBy('updated_at', 'desc')
+        $query = DB::table($this->conversationsTable);
+
+        if ($this->agentName) {
+            $query->where('agent_name', $this->agentName);
+        }
+
+        $conversations = $query->orderBy('updated_at', 'desc')
             ->get();
 
         return $conversations->map(function ($conv) {
@@ -147,6 +164,7 @@ class DatabaseMemory implements MemoryInterface
         if (!$exists) {
             DB::table($this->conversationsTable)->insert([
                 'id' => $conversationId,
+                'agent_name' => $this->agentName,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
