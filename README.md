@@ -29,11 +29,11 @@
 | 🚀 **Zero Boilerplate** | Turn any method into an AI tool with a single attribute |
 | 🧠 **Smart Auto-Inference** | Auto-generates descriptions and infers types from parameter names |
 | 💬 **Chat Widget** | Beautiful, customizable Web Component - just drop it in! |
-|  **Multi-Provider** | OpenAI, Anthropic Claude, Google Gemini, DeepSeek, OpenRouter |
+| 🔌 **Multi-Provider** | OpenAI, Anthropic Claude, Google Gemini, DeepSeek, OpenRouter |
 | 💾 **Memory** | AI-powered summarization with smart pointer tracking — session or database |
 | 📊 **Markdown Responses** | Tables, formatting, and rich text in chat |
 | ⚡ **Smart Returns** | `view()`, `redirect()`, `Model` — AI understands them all |
-| 🤖 **Multi-Agent** | Multiple agents with per-method access control from config |
+| 🤖 **Multi-Agent** | Class-based agents with per-method access control |
 | 🛡️ **Security Built-in** | Prompt injection detection, XSS prevention, secret redaction |
 | 🎯 **Laravel Native** | Feels like part of the framework |
 
@@ -49,12 +49,11 @@ php artisan vendor:publish --tag=ai-agent-config
 Add to your `.env`:
 
 ```env
-# AI Driver (openai, anthropic, gemini, openrouter)
-AI_AGENT_DEFAULT=openai
-OPENAI_API_KEY=sk-...
+# AI Driver (openai, anthropic, gemini, deepseek, openrouter)
+AI_AGENT_DRIVER=openai
+AI_AGENT_API_KEY=sk-...
+AI_AGENT_MODEL=gpt-4o-mini
 
-# Persistent memory (recommended)
-AI_AGENT_MEMORY=database
 ```
 
 Run migrations for conversation history:
@@ -71,25 +70,26 @@ php artisan migrate
 
 Drop it into any Blade view — **routes are auto-registered!**
 
-```html
-<ai-agent-chat
-    endpoint="/ai-agent/chat"
-    theme="dark"
-    title="AI Assistant"
-></ai-agent-chat>
-
+```blade
+@aiAgentWidget
 <script src="/ai-agent/widget.js"></script>
 ```
 
 **Open the page, click the bubble, start talking.** You already have a working AI chatbot! 🎉
 
-> 💡 **Customize the AI personality** — set `system_prompt` in `config/ai-agent.php`:
-> ```php
-> 'widget' => [
->     'system_prompt' => 'You are a helpful shop assistant for an electronics store.',
-> ],
-> ```
-> This is set in config (not HTML) so it stays hidden from the client. See [Configuration](#️-configuration) for all widget options.
+All widget settings (theme, language, position, etc.) are read from `config/ai-agent.php`:
+
+```php
+'widget' => [
+    'theme' => 'dark',
+    'rtl' => false,
+    'primary_color' => '#6366f1',
+    'position' => 'bottom-right',
+    'system_prompt' => 'You are a helpful shop assistant.',
+],
+```
+
+> 💡 The `system_prompt` is set in config (not HTML) so it stays hidden from the client.
 
 ### 2. Give AI Your Tools (Zero-Config!)
 
@@ -114,6 +114,8 @@ class ProductService
 
 Place it **anywhere in `app/`** — the package auto-discovers all `#[AsAITool]` methods. Now say *"Add a product called iPhone for $999"* and it actually does it! 🚀
 
+> 🤖 **Need custom agents?** Create dedicated agents with `php artisan make:agent` — see [Multi-Agent System](#-multi-agent-system).
+
 ---
 
 ## 💬 Chat Widget Component
@@ -122,45 +124,51 @@ A beautiful, drop-in Web Component for AI chat — with conversations, i18n, and
 
 ### Full-Featured Example
 
-```html
-<ai-agent-chat
-    endpoint="/ai-agent/chat"
-    history-endpoint="/ai-agent/history"
-    conversations-endpoint="/ai-agent/conversations"
-    theme="dark"
-    title="Shop Assistant"
-    welcome-message="Hello! How can I help you today?"
-    lang="en"
-    primary-color="#6366f1"
-></ai-agent-chat>
+```blade
+{{-- Reads all settings from config/ai-agent.php --}}
+@aiAgentWidget
+<script src="/ai-agent/widget.js"></script>
+```
 
+Or use the PHP helper directly with overrides:
+
+```blade
+{!! \LaravelAIAgent\Widget::render(['theme' => 'light', 'lang' => 'ar']) !!}
 <script src="/ai-agent/widget.js"></script>
 ```
 
 ### All Options
 
 | Attribute | Description | Default |
-|-----------|-------------|---------|
+|-----------|-------------|----------|
 | `endpoint` | Chat API URL | Required |
+| `stream` | Enable SSE streaming (boolean) | — |
+| `history-endpoint` | Load conversation history + conversations sidebar | — |
+| `persist-messages` | Keep messages across page reloads (boolean) | — |
 | `theme` | `light` or `dark` | `dark` |
 | `lang` | Language: `en`, `ar`, `fr`, `es`, `zh` | `en` |
-| `rtl` | Right-to-left mode | Auto for `ar` |
+| `rtl` | Right-to-left mode (boolean) | Auto for `ar` |
 | `title` | Header title | `AI Assistant` |
 | `subtitle` | Header subtitle | — |
 | `welcome-message` | First bot message | — |
 | `placeholder` | Input placeholder | `Type your message...` |
 | `primary-color` | Theme color | `#6366f1` |
-| `position` | `bottom-right` or `bottom-left` | `bottom-right` |
-| `history-endpoint` | Load conversation history | — |
-| `conversations-endpoint` | Enable conversations sidebar | — |
+| `position` | `bottom-right`, `bottom-left`, `top-right`, `top-left` | `bottom-right` |
+| `width` | Widget width | `400px` |
+| `height` | Widget height | `600px` |
+| `button-icon` | Floating button icon (URL or emoji) | `💬` |
+| `button-size` | Floating button size | `56px` |
 
 ### Features
 
-- ✅ **Markdown Support** — Tables, bold, code, lists
+- ✅ **SSE Streaming** — Real-time streaming with tool execution progress
+- ✅ **Markdown Support** — Tables, bold, code blocks with copy button, lists
+- ✅ **Voice Input** — Built-in Web Speech API microphone button
 - ✅ **i18n** — 5 languages built-in (EN, AR, FR, ES, ZH)
 - ✅ **RTL Support** — Auto-detected for Arabic, Hebrew, Farsi
 - ✅ **Stop Button** — Cancel AI responses mid-generation
-- ✅ **Conversations Sidebar** — Switch between past conversations
+- ✅ **Conversations Sidebar** — Switch between past conversations (isolated per agent)
+- ✅ **Keyboard Shortcuts** — Escape to close, Enter to send, Shift+Enter for new line
 - ✅ **Mobile Responsive** — Full-screen on mobile
 - ✅ **No Dependencies** — Pure Web Component
 
@@ -365,56 +373,55 @@ Agent::driver('openai')->model('gpt-4o')->chat("Hello");
 
 ## 🤖 Multi-Agent System
 
-Define multiple agents with isolated tools and permissions — **all from config**.
+Create dedicated agent classes with isolated tools, permissions, and conversations.
 
-### 💡 Real-World Example: E-Commerce App
+### 1. Create an Agent
 
-Imagine you're building a mobile app with **one Laravel backend** powering three different AI assistants:
-
-| Agent | Who uses it | Can do |
-|-------|------------|--------|
-| 🛒 **shop** | Customers (mobile app) | Browse products, track orders, get help |
-| 📊 **admin** | Store managers (dashboard) | All above + delete orders, view stats, manage inventory |
-| 🎧 **support** | Support team (internal) | All above + refunds, access customer data, escalate tickets |
-
-**One codebase. Three agents. Zero duplication.** 🔥
-
-### 1. Define Agents
-
-```php
-// config/ai-agent.php
-'agents' => [
-    'shop' => [
-        'system_prompt' => 'You are a friendly shop assistant for our web and mobile app customers.',
-        'middleware' => ['api', 'auth:sanctum'],
-    ],
-    'admin' => [
-        'system_prompt' => 'You are an admin assistant with full store management access.',
-        'middleware' => ['api', 'auth:sanctum', 'role:admin'],
-    ],
-    'support' => [
-        'system_prompt' => 'You are a support agent. Be empathetic and resolve issues quickly.',
-        'middleware' => ['api', 'auth:sanctum', 'role:support'],
-    ],
-],
+```bash
+php artisan make:agent ShopAgent
+php artisan make:agent AdminAgent
 ```
 
-### 2. Scope Tools Per-Method
+This generates a class in `app/AI/Agents/` and **auto-registers** it in `config/ai-agent.php`.
 
 ```php
+// app/AI/Agents/ShopAgent.php
+class ShopAgent extends BaseAgent
+{
+    public function instructions(): string
+    {
+        return 'You are a friendly shop assistant. Help customers browse and order.';
+    }
+
+    public function tools(): array
+    {
+        return [\App\Services\ShopService::class];
+    }
+
+    // Optional: customize driver, model, middleware, widget...
+    // public function driver(): ?string { return 'openai'; }
+    // public function model(): ?string { return 'gpt-4o-mini'; }
+    // public function routeMiddleware(): array { return ['web', 'auth']; }
+}
+```
+
+### 2. Scope Tools Per Agent
+
+Use class references for IDE autocompletion and refactor safety:
+
+```php
+use App\AI\Agents\AdminAgent;
+
 class OrderService
 {
     #[AsAITool]                                        // 👈 All agents see this
     public function listOrders(): array { /* ... */ }
 
-    #[AsAITool(agents: ['admin', 'support'])]          // 👈 Admin + Support only
+    #[AsAITool(agents: [AdminAgent::class])]           // 👈 Admin only
     public function deleteOrder(int $id) { /* ... */ }
 
-    #[AsAITool(agents: ['admin'])]                     // 👈 Admin only
+    #[AsAITool(agents: [AdminAgent::class])]           // 👈 Admin only
     public function advancedStats() { /* ... */ }
-
-    #[AsAITool(agents: ['support'])]                   // 👈 Support only
-    public function issueRefund(int $orderId) { /* ... */ }
 }
 ```
 
@@ -422,32 +429,54 @@ class OrderService
 
 ### 3. Auto-Generated Endpoints
 
-Each agent gets its own route — **automatically**:
+Each agent gets its own isolated routes — **automatically**:
 
 ```
-POST /ai-agent/shop/chat      → sees: listOrders
-POST /ai-agent/admin/chat     → sees: listOrders, deleteOrder, advancedStats
-POST /ai-agent/support/chat   → sees: listOrders, deleteOrder, issueRefund
+POST   /ai-agent/shop/chat           → Chat with ShopAgent
+POST   /ai-agent/shop/chat-stream    → SSE streaming chat
+GET    /ai-agent/shop/conversations  → List ShopAgent conversations only
+GET    /ai-agent/shop/history        → Conversation history
+DELETE /ai-agent/shop/history        → Clear conversation
+
+POST   /ai-agent/admin/chat          → Chat with AdminAgent (sees deleteOrder, advancedStats)
+GET    /ai-agent/admin/conversations → List AdminAgent conversations only
 ```
 
-### 4. Connect — Web, Mobile, Anywhere
+**Conversations are isolated per agent** — each agent sees only its own conversation history.
 
-**Web store** — drop in the widget:
-```html
-<ai-agent-chat endpoint="/ai-agent/shop/chat" title="Shop Assistant"></ai-agent-chat>
+### 4. Add Widget to Blade
+
+Each agent renders its own fully-configured widget:
+
+```php
+// In any Blade view
+{!! \App\AI\Agents\ShopAgent::widget() !!}
+{!! \App\AI\Agents\AdminAgent::widget() !!}
+<script src="/ai-agent/widget.js"></script>
 ```
 
-**Admin dashboard:**
-```html
-<ai-agent-chat endpoint="/ai-agent/admin/chat" title="Admin AI" theme="light"></ai-agent-chat>
+Each widget automatically uses the correct endpoints, theme, language, and position defined in the agent's `widgetConfig()`.
+
+### 5. Customize Widget Appearance
+
+```php
+class AdminAgent extends BaseAgent
+{
+    public function widgetConfig(): array
+    {
+        return [
+            'title' => 'Admin AI',
+            'theme' => 'light',
+            'lang' => 'ar',
+            'primary_color' => '#ef4444',
+            'position' => 'bottom-left',
+        ];
+    }
+}
 ```
 
-**Support panel:**
-```html
-<ai-agent-chat endpoint="/ai-agent/support/chat" title="Support AI"></ai-agent-chat>
-```
+### 6. Mobile / API Usage
 
-**Mobile app** (Flutter, React Native, etc.) — just call the API:
 ```dart
 // Flutter example
 final response = await http.post(
@@ -456,16 +485,7 @@ final response = await http.post(
 );
 ```
 
-**Boom!** 💥 One Laravel backend powering your website, admin dashboard, support panel, AND mobile app — each with its own AI personality and permissions.
-
-### 5. Programmatic Usage
-
-```php
-Agent::agent('shop')->conversation($id)->chat('Show my orders');
-Agent::agent('admin')->chat('Delete order 5');
-```
-
-> **Zero agents config?** Everything works like before — single agent, all tools discovered automatically.
+> **No agents?** Everything works without agents — use the generic `/ai-agent/chat` endpoint with the widget directly.
 
 ---
 
@@ -497,13 +517,13 @@ Agent::conversation('user-123')
 ```php
 // config/ai-agent.php
 return [
-    'default' => env('AI_AGENT_DEFAULT', 'openai'),
+    'default' => env('AI_AGENT_DRIVER', 'openai'),
     'verify_ssl' => env('AI_AGENT_VERIFY_SSL', false),
     
     'drivers' => [
         'openai' => [
             'api_key' => env('OPENAI_API_KEY'),
-            'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+            'model' => env('OPENAI_MODEL',env('AI_AGENT_MODEL','gpt-4o-mini')),
         ],
         'anthropic' => [ /* ... */ ],
         'gemini'    => [ /* ... */ ],
@@ -524,10 +544,15 @@ return [
         'ai_summarization' => true, // Use AI for smart summaries
     ],
 
+    'agents' => [
+        \App\AI\Agents\ShopAgent::class,
+        \App\AI\Agents\AdminAgent::class,
+    ],
+
     'security' => [
         'enabled' => true,          // All security on by default
         'max_tool_calls_per_request' => 10,
-        'max_iterations' => 5,
+        'max_iterations' => 10,
     ],
 ];
 ```
@@ -571,19 +596,18 @@ class ShopService
 }
 ```
 
-```html
-<!-- 2️⃣ Drop the widget — routes are auto-registered! -->
-<ai-agent-chat
-    endpoint="/ai-agent/chat"
-    history-endpoint="/ai-agent/history"
-    conversations-endpoint="/ai-agent/conversations"
-    theme="dark"
-    title="Shop Assistant"
-></ai-agent-chat>
+```bash
+# 2️⃣ Create an agent
+php artisan make:agent ShopAgent
+```
+
+```php
+// 3️⃣ Drop the widget in Blade — routes are auto-registered!
+{!! \App\AI\Agents\ShopAgent::widget() !!}
 <script src="/ai-agent/widget.js"></script>
 ```
 
-**That's it.** Tools are auto-discovered, routes are auto-registered, memory is auto-managed. 🎉
+**That's it.** Tools are auto-discovered, routes are auto-registered, conversations are isolated per agent, memory is auto-managed. 🎉
 
 ---
 

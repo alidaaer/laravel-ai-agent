@@ -26,6 +26,7 @@ return new class extends Migration
             $table->text('content');
             $table->json('tool_calls')->nullable();
             $table->string('tool_call_id')->nullable();
+            $table->json('metadata')->nullable();
             $table->timestamps();
 
             $table->foreign('conversation_id')

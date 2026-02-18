@@ -56,10 +56,6 @@ class ToolDiscovery
             foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
                 // Support both #[AsAITool] and #[Tool]
                 $attributes = $method->getAttributes(AsAITool::class);
-                
-                if (empty($attributes)) {
-                    $attributes = $method->getAttributes(\LaravelAIAgent\Attributes\Tool::class);
-                }
 
                 if (empty($attributes)) {
                     continue;

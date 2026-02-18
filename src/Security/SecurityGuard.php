@@ -43,7 +43,7 @@ class SecurityGuard
         $this->moderator = new ContentModerator();
         $this->sanitizer = new OutputSanitizer();
         $this->maxToolCalls = config('ai-agent.security.max_tool_calls_per_request', 10);
-        $this->maxIterations = config('ai-agent.security.max_iterations', 5);
+        $this->maxIterations = config('ai-agent.security.max_iterations', 10);
     }
 
     /**
@@ -168,7 +168,7 @@ class SecurityGuard
      */
     public function checkIterationLimit(int $iteration): bool
     {
-        if ($iteration >= $this->maxIterations) {
+        if ($iteration > $this->maxIterations) {
             event(new SecurityViolation('iteration_limit_exceeded', [
                 'iteration' => $iteration,
                 'limit' => $this->maxIterations,

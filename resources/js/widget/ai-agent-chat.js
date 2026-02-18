@@ -5,10 +5,9 @@
  * Now with Markdown support for tables, formatting, and more!
  * 
  * Usage:
- * <ai-agent-chat endpoint="/api/chat" theme="dark"></ai-agent-chat>
+ * @aiAgentWidget in your blade file
  * 
  * @author Laravel AI Agent
- * @version 1.1.0
  */
 
 class AIAgentChat extends HTMLElement {
@@ -44,6 +43,8 @@ class AIAgentChat extends HTMLElement {
             thinking: 'Thinking...',
             executing: 'Executing: {name}...',
             executed: '{name} ✓',
+            completed: '✓ Completed {count} task{tasks}',
+            failed: '⚠️ {count} task{tasks} failed',
             writing: 'Writing response...',
             listening: 'Listening...',
         },
@@ -63,9 +64,11 @@ class AIAgentChat extends HTMLElement {
             error: 'خطأ: {msg}',
             stopped: 'تم الإيقاف',
             thinking: 'يفكر...',
-            executing: 'ينفذ: {name}...',
+            executing: 'تنفيذ: {name}...',
             executed: '{name} ✓',
-            writing: 'يكتب الرد...',
+            completed: '✓ تم إنجاز {count} مهام{tasks}',
+            failed: '⚠️ {count} مهام{tasks} فشلت',
+            writing: 'كتابة الرد...',
             listening: 'أستمع...',
         },
         fr: {
@@ -84,9 +87,11 @@ class AIAgentChat extends HTMLElement {
             error: 'Erreur : {msg}',
             stopped: 'Arrêté',
             thinking: 'Réflexion...',
-            executing: 'Exécution : {name}...',
+            executing: 'Exécution: {name}...',
             executed: '{name} ✓',
-            writing: 'Rédaction...',
+            completed: '✓ {count} tâche{tasks} terminée{tasks}',
+            failed: '⚠️ {count} tâche{tasks} échouée{tasks}',
+            writing: 'Rédaction de la réponse...',
             listening: 'Écoute...',
         },
         es: {
@@ -107,7 +112,9 @@ class AIAgentChat extends HTMLElement {
             thinking: 'Pensando...',
             executing: 'Ejecutando: {name}...',
             executed: '{name} ✓',
-            writing: 'Escribiendo...',
+            completed: '✓ {count} tarea{tasks} completada{tasks}',
+            failed: '⚠️ {count} tarea{tasks} fallida{tasks}',
+            writing: 'Escribiendo respuesta...',
             listening: 'Escuchando...',
         },
         zh: {
@@ -128,7 +135,9 @@ class AIAgentChat extends HTMLElement {
             thinking: '思考中...',
             executing: '执行: {name}...',
             executed: '{name} ✓',
-            writing: '正在编写...',
+            completed: '✓ 完成 {count} 个任务',
+            failed: '⚠️ {count} 个任务失败',
+            writing: '正在编写回复...',
             listening: '正在聆听...',
         },
     };
@@ -235,6 +244,25 @@ class AIAgentChat extends HTMLElement {
         const lang = this.lang;
         const translations = AIAgentChat.translations[lang] || AIAgentChat.translations['en'];
         let text = translations[key] || AIAgentChat.translations['en'][key] || key;
+        
+        // Handle pluralization for tasks
+        if (params.count !== undefined) {
+            const isPlural = params.count > 1;
+            if (key === 'completed' || key === 'failed') {
+                if (lang === 'en') {
+                    text = text.replace('{tasks}', isPlural ? 's' : '');
+                } else if (lang === 'ar') {
+                    text = text.replace('{tasks}', '');
+                } else if (lang === 'fr') {
+                    text = text.replace('{tasks}', isPlural ? 's' : '');
+                } else if (lang === 'es') {
+                    text = text.replace('{tasks}', isPlural ? 's' : '');
+                } else if (lang === 'zh') {
+                    text = text.replace('{tasks}', '');
+                }
+            }
+        }
+        
         Object.entries(params).forEach(([k, v]) => {
             text = text.replace(`{${k}}`, v);
         });
@@ -298,11 +326,20 @@ class AIAgentChat extends HTMLElement {
 
             const data = await response.json();
             if (data.success && data.messages && data.messages.length > 0) {
-                this.messages = data.messages.map(msg => ({
-                    content: msg.content,
-                    role: msg.role === 'assistant' ? 'bot' : 'user',
-                    time: ''
-                }));
+                this.messages = data.messages.map(msg => {
+                    const message = {
+                        content: msg.content,
+                        role: msg.role === 'assistant' ? 'bot' : 'user',
+                        time: ''
+                    };
+                    
+                    // Add task count if available in metadata
+                    if (msg.metadata && msg.metadata.task_count && msg.role === 'assistant') {
+                        message.taskCount = msg.metadata.task_count;
+                    }
+                    
+                    return message;
+                });
                 this.updateMessagesUI();
             }
         } catch (e) {
@@ -522,6 +559,7 @@ class AIAgentChat extends HTMLElement {
                 }
 
                 * { box-sizing: border-box; margin: 0; padding: 0; }
+                button { outline: none; }
 
                 /* Button */
                 .widget-button {
@@ -583,6 +621,7 @@ class AIAgentChat extends HTMLElement {
                     display: flex;
                     align-items: center;
                     justify-content: space-between;
+                    border-bottom: 2px solid var(--primary-dark);
                 }
 
                 .widget-header-info h3 {
@@ -600,12 +639,15 @@ class AIAgentChat extends HTMLElement {
                     background: rgba(255,255,255,0.2);
                     border: none;
                     color: white;
-                    width: 32px;
-                    height: 32px;
+                    width: 38px;
+                    height: 38px;
                     border-radius: 50%;
                     cursor: pointer;
                     font-size: 1.2rem;
                     transition: background 0.2s;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                 }
 
                 .widget-close:hover { background: rgba(255,255,255,0.3); }
@@ -645,6 +687,13 @@ class AIAgentChat extends HTMLElement {
                     font-size: 0.65rem;
                     opacity: 0.6;
                     margin-top: 6px;
+                }
+
+                .message-task-count {
+                    font-size: 0.75rem;
+                    opacity: 0.7;
+                    margin-top: 4px;
+                    color: var(--primary);
                 }
 
                 /* ================================
@@ -863,6 +912,8 @@ class AIAgentChat extends HTMLElement {
                     background: var(--bot-bubble);
                     border: 1px solid color-mix(in srgb, var(--primary) 15%, transparent);
                     animation: fadeInUp 0.25s ease;
+                    max-width: 90%;
+                    border-bottom-${rtl ? 'right' : 'left'}-radius: 4px;
                 }
 
                 .progress-header {
@@ -890,6 +941,47 @@ class AIAgentChat extends HTMLElement {
                 .progress-block.collapsed .progress-arrow {
                     transform: rotate(-90deg);
                 }
+
+                /* Progress Bar */
+                .progress-bar-container {
+                    height: 3px;
+                    background: color-mix(in srgb, var(--primary) 10%, transparent);
+                    margin: 0 14px;
+                    border-radius: 2px;
+                    overflow: hidden;
+                }
+
+                .progress-bar {
+                    height: 100%;
+                    background: var(--primary);
+                    width: 0%;
+                    transition: width 0.3s ease, background 0.3s ease;
+                    border-radius: 2px;
+                }
+
+                .progress-bar.error {
+                    background: #ef4444;
+                }
+
+                /* Inline typing dots for progress header */
+                .typing-dots-inline {
+                    display: inline-flex;
+                    gap: 2px;
+                    align-items: center;
+                    margin-right: 4px;
+                }
+
+                .typing-dots-inline span {
+                    width: 4px;
+                    height: 4px;
+                    background: var(--muted);
+                    border-radius: 50%;
+                    animation: typingBounce 1.4s infinite ease-in-out;
+                }
+
+                .typing-dots-inline span:nth-child(1) { animation-delay: 0s; }
+                .typing-dots-inline span:nth-child(2) { animation-delay: 0.2s; }
+                .typing-dots-inline span:nth-child(3) { animation-delay: 0.4s; }
 
                 .progress-summary {
                     flex: 1;
@@ -932,10 +1024,28 @@ class AIAgentChat extends HTMLElement {
                     padding-left: 10px;
                 }
 
-                .progress-step .step-icon { font-size: 0.85rem; flex-shrink: 0; }
-                .progress-step.thinking .step-icon { animation: statusPulse 1s infinite ease-in-out; }
-                .progress-step.success { color: var(--text); }
-                .progress-step.error { color: #ef4444; }
+                .progress-step .step-icon { 
+                    font-size: 0.85rem; 
+                    flex-shrink: 0;
+                    width: 18px;
+                    height: 18px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 50%;
+                    background: color-mix(in srgb, var(--primary) 10%, transparent);
+                }
+                
+                .progress-step.success .step-icon {
+                    background: #22c55e;
+                    color: white;
+                    font-weight: bold;
+                }
+                
+                .progress-step.error .step-icon {
+                    background: #ef4444;
+                    color: white;
+                }
 
                 .progress-block.done { border-color: color-mix(in srgb, #22c55e 25%, transparent); }
                 .progress-block.has-error { border-color: color-mix(in srgb, #ef4444 25%, transparent); }
@@ -1051,12 +1161,20 @@ class AIAgentChat extends HTMLElement {
                     border: none;
                     color: var(--muted);
                     cursor: pointer;
-                    font-size: 1.2rem;
                     padding: 4px 8px;
                     border-radius: 6px;
                     transition: all 0.2s;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
                 }
                 .conv-back-btn:hover { color: var(--text); background: var(--border); }
+                
+                /* RTL support for back button */
+                [dir="rtl"] .conv-back-btn svg,
+                :host([rtl]) .conv-back-btn svg {
+                    transform: scaleX(-1);
+                }
 
                 .conv-new-btn {
                     padding: 10px 16px;
@@ -1112,7 +1230,7 @@ class AIAgentChat extends HTMLElement {
                     border: none;
                     color: var(--muted);
                     cursor: pointer;
-                    font-size: 0.85rem;
+                    font-size: 0.95rem;
                     padding: 4px 6px;
                     border-radius: 6px;
                     opacity: 0;
@@ -1138,8 +1256,8 @@ class AIAgentChat extends HTMLElement {
                     background: rgba(255,255,255,0.2);
                     border: none;
                     color: white;
-                    width: 32px;
-                    height: 32px;
+                    width: 38px;
+                    height: 38px;
                     border-radius: 50%;
                     cursor: pointer;
                     font-size: 0.9rem;
@@ -1147,6 +1265,7 @@ class AIAgentChat extends HTMLElement {
                     display: flex;
                     align-items: center;
                     justify-content: center;
+                    padding:10px;
                 }
                 .widget-conv-btn:hover { background: rgba(255,255,255,0.3); }
 
@@ -1182,7 +1301,11 @@ class AIAgentChat extends HTMLElement {
                 <div class="conversations-panel" part="conversations">
                     <div class="conversations-panel-header">
                         <h4>${this.t('conversations')}</h4>
-                        <button class="conv-back-btn">${rtl ? '→' : '←'}</button>
+                        <button class="conv-back-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m15 18-6-6 6-6"/>
+                            </svg>
+                        </button>
                     </div>
                     <button class="conv-new-btn">${this.t('newChat')}</button>
                     <div class="conversations-list"></div>
@@ -1196,8 +1319,16 @@ class AIAgentChat extends HTMLElement {
                             ${subtitle ? `<p>${subtitle}</p>` : ''}
                         </div>
                         <div class="widget-header-actions">
-                            <button class="widget-conv-btn" title="${this.t('conversations')}">☰</button>
-                            <button class="widget-close" part="close-button">×</button>
+                            <button class="widget-conv-btn" title="${this.t('conversations')}">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                </svg>
+                            </button>
+                            <button class="widget-close" part="close-button">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M18 6L6 18M6 6l12 12"/>
+                                </svg>
+                            </button>
                         </div>
                     </div>
 
@@ -1228,14 +1359,24 @@ class AIAgentChat extends HTMLElement {
     }
 
     renderMessages() {
-        return this.messages.map(msg => this.renderSingleMessage(msg)).join('');
+        return this.messages.map(msg => this.renderSingleMessage(msg)).filter(html => html !== '').join('');
     }
 
     renderSingleMessage(msg) {
         const content = msg.role === 'bot' ? this.parseMarkdown(msg.content) : this.escapeHtml(msg.content);
+        
+        // Skip rendering if content is empty and no task count
+        if (!content.trim() && !msg.taskCount) {
+            return '';
+        }
+        
+        const taskCountHtml = msg.role === 'bot' && msg.taskCount ? 
+            `<div class="message-task-count">${this.t('completed', { count: msg.taskCount })}</div>` : '';
+        
         return `
             <div class="message message-${msg.role}">
                 <div class="message-content">${content}</div>
+                ${taskCountHtml}
                 <div class="message-time">${msg.time}</div>
             </div>
         `;
@@ -1255,7 +1396,7 @@ class AIAgentChat extends HTMLElement {
                 bg: '#0f172a',
                 card: '#1e293b',
                 text: '#f1f5f9',
-                muted: '#64748b',
+                muted: '#bfbfbf',
                 border: '#334155',
                 inputBg: '#0f172a',
                 botBubble: '#334155',
@@ -1371,6 +1512,13 @@ class AIAgentChat extends HTMLElement {
                 } else {
                     this.close();
                 }
+            }
+        });
+
+        // Click outside to close
+        document.addEventListener('click', (e) => {
+            if (this.isOpen && !this.contains(e.target) && !this.shadowRoot.contains(e.target)) {
+                this.close();
             }
         });
     }
@@ -1625,36 +1773,25 @@ class AIAgentChat extends HTMLElement {
 
         switch (event) {
             case 'thinking':
-                this.removeThinkingStep(stepsContainer);
-                this.addProgressStep(stepsContainer, '🤔', this.t('thinking'), 'thinking');
-                this.updateProgressHeader(block, '⏳', this.t('thinking'));
+                this.updateProgressHeader(block, '<span class="typing-dots-inline"><span></span><span></span><span></span></span>', '');
                 break;
 
             case 'tool_start': {
                 this.removeThinkingStep(stepsContainer);
+                // Open the progress block when first tool starts
+                block.classList.remove('collapsed');
                 const label = this.getToolLabel(data);
-                this.addProgressStep(stepsContainer, '🔧', this.t('executing', { name: label }), 'running', `tool-${data.name}`);
-                this.updateProgressHeader(block, '⏳', this.t('executing', { name: label }));
+                this.updateProgressHeader(block, '⚙️', this.t('executing', { name: label }));
                 break;
             }
 
             case 'tool_done': {
                 const label = this.getToolLabel(data);
-                const stepId = `tool-${data.name}`;
-                const existing = stepsContainer.querySelector(`.progress-step[data-id="${stepId}"]`);
-                if (existing) {
-                    existing.className = `progress-step ${data.success ? 'success' : 'error'}`;
-                    existing.querySelector('.step-icon').textContent = data.success ? '✅' : '❌';
-                    existing.querySelector('.step-text').textContent = data.success
-                        ? this.t('executed', { name: label })
-                        : `❌ ${label}`;
-                } else {
-                    this.addProgressStep(stepsContainer,
-                        data.success ? '✅' : '❌',
-                        data.success ? this.t('executed', { name: label }) : `❌ ${label}`,
-                        data.success ? 'success' : 'error'
-                    );
-                }
+                this.addProgressStep(stepsContainer,
+                    data.success ? '✓' : '⚠️',
+                    data.success ? this.t('executed', { name: label }) : `⚠️ ${label} failed`,
+                    data.success ? 'success' : 'error'
+                );
                 if (!data.success) block.classList.add('has-error');
                 break;
             }
@@ -1671,7 +1808,7 @@ class AIAgentChat extends HTMLElement {
             case 'error':
                 this.removeThinkingStep(stepsContainer);
                 block.classList.add('has-error');
-                this.addProgressStep(stepsContainer, '❌', data.message || 'Error', 'error');
+                this.addProgressStep(stepsContainer, '⚠️', data.message || 'Error', 'error');
                 this.finalizeProgressBlock(block, true);
                 this.addMessage(this.t('error', { msg: data.message || 'Unknown error' }), 'bot');
                 this._activeProgressBlock = null;
@@ -1705,11 +1842,14 @@ class AIAgentChat extends HTMLElement {
         if (!container) return null;
 
         const block = document.createElement('div');
-        block.className = 'progress-block';
+        block.className = 'progress-block collapsed';
         block.innerHTML = `
             <div class="progress-header">
                 <span class="progress-arrow">▼</span>
-                <span class="progress-summary">⏳ ${this.t('thinking')}</span>
+                <span class="progress-summary"><span class="typing-dots-inline"><span></span><span></span><span></span></span></span>
+            </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar"></div>
             </div>
             <div class="progress-steps"></div>
         `;
@@ -1741,7 +1881,7 @@ class AIAgentChat extends HTMLElement {
 
     updateProgressHeader(block, icon, text) {
         const summary = block.querySelector('.progress-summary');
-        if (summary) summary.textContent = `${icon} ${text}`;
+        if (summary) summary.innerHTML = `${icon} ${text}`;
     }
 
     removeThinkingStep(container) {
@@ -1755,20 +1895,30 @@ class AIAgentChat extends HTMLElement {
         const errorCount = block.querySelectorAll('.progress-step.error').length;
         const total = successCount + errorCount;
 
-        block.classList.add('collapsed', hasError ? 'has-error' : 'done');
+        block.classList.add(hasError ? 'has-error' : 'done');
+        
+        // Only collapse if no tools were executed
+        if (total === 0) {
+            block.classList.add('collapsed');
+        }
+
+        // Update progress bar
+        const progressBar = block.querySelector('.progress-bar');
+        if (progressBar) {
+            const percentage = total > 0 ? (successCount / total) * 100 : 0;
+            progressBar.style.width = `${percentage}%`;
+            progressBar.classList.toggle('error', hasError);
+        }
 
         const summary = block.querySelector('.progress-summary');
         if (summary) {
             if (hasError) {
-                summary.textContent = `❌ ${this.t('error', { msg: '' }).replace(': ', '')} (${errorCount})`;
+                summary.textContent = this.t('failed', { count: errorCount });
             } else {
-                const lang = this.config.lang;
-                const stepsWord = lang === 'ar' ? 'مهام' : lang === 'fr' ? 'tâches' : lang === 'es' ? 'tareas' : lang === 'zh' ? '任务' : 'tasks';
-                //hide summary if total is 0
                 if (total === 0) {
                     block.style.display = 'none';
                 } else {
-                    summary.textContent = `✅ ${total} ${stepsWord}`;
+                    summary.textContent = this.t('completed', { count: total });
                 }
             }
         }
@@ -2033,7 +2183,7 @@ class AIAgentChat extends HTMLElement {
         this.recognition = new SpeechRecognition();
         this.recognition.lang = this.getSpeechLang();
         this.recognition.interimResults = true;
-        this.recognition.continuous = false;
+        this.recognition.continuous = true; // Changed to true to keep listening
         this.recognition.maxAlternatives = 1;
 
         const input = this.shadowRoot.querySelector('.widget-input');
@@ -2070,7 +2220,24 @@ class AIAgentChat extends HTMLElement {
         };
 
         this.recognition.onend = () => {
-            this.stopVoice();
+            // In continuous mode, onend fires after each result
+            // Only stop if user manually stopped or there was an error
+            if (!this.isRecording || this._stopRequested) {
+                this.stopVoice();
+                this._stopRequested = false;
+            } else {
+                // Restart recognition to keep listening
+                try {
+                    setTimeout(() => {
+                        if (this.isRecording && this.recognition) {
+                            this.recognition.start();
+                        }
+                    }, 100);
+                } catch (e) {
+                    console.warn('AI Agent: Failed to restart recognition', e);
+                    this.stopVoice();
+                }
+            }
             // Auto-focus input after recording
             if (input) input.focus();
         };
@@ -2085,6 +2252,7 @@ class AIAgentChat extends HTMLElement {
 
     stopVoice() {
         this.isRecording = false;
+        this._stopRequested = true; // Set flag to prevent auto-restart
         const micBtn = this.shadowRoot.querySelector('.widget-mic');
         if (micBtn) micBtn.classList.remove('recording');
 

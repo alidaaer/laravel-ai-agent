@@ -29,6 +29,7 @@ class DatabaseMemory implements MemoryInterface
             'content' => $message['content'] ?? '',
             'tool_calls' => !empty($message['tool_calls']) ? json_encode($message['tool_calls']) : null,
             'tool_call_id' => $message['tool_call_id'] ?? null,
+            'metadata' => !empty($message['metadata']) ? json_encode($message['metadata']) : null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -43,6 +44,49 @@ class DatabaseMemory implements MemoryInterface
     }
 
     public function recall(string $conversationId, int $limit = 50): array
+    {
+        // For history endpoint, get all messages
+        $fetchLimit = $limit >= 50 ? 1000 : $limit;
+
+        // Use ID ordering (deterministic) instead of created_at (can have duplicate timestamps)
+        $messages = DB::table($this->messagesTable)
+            ->where('conversation_id', $conversationId)
+            ->orderBy('id', 'desc')
+            ->limit($fetchLimit)
+            ->get()
+            ->reverse()
+            ->values();
+        
+        // Convert to array format
+        $allMessages = [];
+        foreach ($messages as $msg) {
+            $message = [
+                'role' => $msg->role,
+                'content' => $msg->content,
+            ];
+
+            if ($msg->tool_calls) {
+                $message['tool_calls'] = json_decode($msg->tool_calls, true);
+            }
+
+            if ($msg->tool_call_id) {
+                $message['tool_call_id'] = $msg->tool_call_id;
+            }
+
+            if ($msg->metadata) {
+                $message['metadata'] = json_decode($msg->metadata, true);
+            }
+
+            $allMessages[] = $message;
+        }
+
+        return $allMessages;
+    }
+
+    /**
+     * Get recent messages for LLM context with clean boundary logic
+     */
+    public function recallForLLM(string $conversationId): array
     {
         $recentLimit = config('ai-agent.memory.recent_messages', 4);
 
@@ -71,6 +115,10 @@ class DatabaseMemory implements MemoryInterface
                 $message['tool_call_id'] = $msg->tool_call_id;
             }
 
+            if ($msg->metadata) {
+                $message['metadata'] = json_decode($msg->metadata, true);
+            }
+
             $allMessages[] = $message;
         }
 
@@ -78,18 +126,18 @@ class DatabaseMemory implements MemoryInterface
         // (not in the middle of a tool sequence)
         $total = count($allMessages);
         $startIndex = max(0, $total - $recentLimit);
-
+        
         // Walk forward to find a clean start (user or system message)
         while ($startIndex < $total) {
             $role = $allMessages[$startIndex]['role'] ?? '';
-            if ($role === 'user' || $role === 'system') {
+            if ($role === 'user' || $role === 'assistant') {
                 break;
             }
             $startIndex++;
         }
 
         $recentMessages = array_slice($allMessages, $startIndex);
-
+        
         $history = [];
 
         // Prepend context summary if exists
@@ -101,7 +149,12 @@ class DatabaseMemory implements MemoryInterface
             ];
         }
 
-        return array_merge($history, $recentMessages);
+        // Add recent messages
+        foreach ($recentMessages as $msg) {
+            $history[] = $msg;
+        }
+
+        return $history;
     }
 
     public function forget(string $conversationId): void

@@ -240,8 +240,8 @@ class Agent
         $driver = $this->getDriver();
         $memory = $this->getMemory();
 
-        // Get conversation history
-        $history = $memory->recall($this->conversationId);
+        // Get conversation history for LLM (limited context)
+        $history = $memory->recallForLLM($this->conversationId);
 
         if ($loggingEnabled) {
             \Illuminate\Support\Facades\Log::info('🧠 Memory state', [
@@ -265,6 +265,10 @@ class Agent
         
         // Add default system prompt (formatting instructions)
         $defaultPrompt = config('ai-agent.default_system_prompt');
+        if ($defaultPrompt === null) {
+            // Load from package default file
+            $defaultPrompt = file_get_contents(__DIR__ . '/../resources/prompts/default.txt');
+        }
         if ($defaultPrompt) {
             $systemParts[] = $defaultPrompt;
         }
@@ -593,6 +597,10 @@ class Agent
         }
         
         $defaultPrompt = config('ai-agent.default_system_prompt');
+        if ($defaultPrompt === null) {
+            // Load from package default file
+            $defaultPrompt = file_get_contents(__DIR__ . '/../resources/prompts/default.txt');
+        }
         if ($defaultPrompt) {
             $systemParts[] = $defaultPrompt;
         }
@@ -618,7 +626,8 @@ class Agent
         $onEvent('thinking', []);
 
         // Run the loop with events
-        $response = $this->runLoopWithEvents($driver, $message, $history, $options, $security, $memory, $onEvent);
+        $toolExecutionCount = 0;
+        $response = $this->runLoopWithEvents($driver, $message, $history, $options, $security, $memory, $onEvent, $toolExecutionCount);
 
         // Output Sanitization
         $content = $response->content;
@@ -626,8 +635,13 @@ class Agent
             $content = $security->sanitizeOutput($content);
         }
 
-        // Store response
-        $memory->remember($this->conversationId, ['role' => 'assistant', 'content' => $content]);
+        // Store response with task count metadata
+        $metadata = ['task_count' => $toolExecutionCount];
+        $memory->remember($this->conversationId, [
+            'role' => 'assistant', 
+            'content' => $content,
+            'metadata' => $metadata
+        ]);
 
         event(new AgentCompleted($this->name, $response, $this->conversationId));
 
@@ -647,7 +661,8 @@ class Agent
         array $options,
         ?SecurityGuard $security,
         ?\LaravelAIAgent\Contracts\MemoryInterface $memory,
-        callable $onEvent
+        callable $onEvent,
+        int &$toolExecutionCount = 0
     ): AgentResponse {
         $maxIterations = config('ai-agent.security.max_iterations', $this->maxIterations);
         $iterations = 0;
@@ -737,6 +752,9 @@ class Agent
             // Execute tool calls
             $toolResults = $this->toolExecutor->executeMany($response->toolCalls, $this->context);
             $lastToolResults = $toolResults;
+            
+            // Track tool execution count
+            $toolExecutionCount += count($response->toolCalls);
 
             // Event: tool_done for each tool
             foreach ($toolResults as $result) {
@@ -896,19 +914,37 @@ class Agent
     }
 
     /**
-     * Find PHP classes in a directory.
+     * Find PHP classes in a directory (recursive).
      */
     protected function findClassesInPath(string $path): array
     {
         $classes = [];
-        $files = glob($path . '/*.php');
 
-        foreach ($files as $file) {
-            $content = file_get_contents($file);
+        $iterator = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($path, \FilesystemIterator::SKIP_DOTS)
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $content = file_get_contents($file->getPathname());
             
             if (preg_match('/namespace\s+([^;]+);/', $content, $nsMatch) &&
                 preg_match('/class\s+(\w+)/', $content, $classMatch)) {
-                $classes[] = $nsMatch[1] . '\\' . $classMatch[1];
+                $fqcn = $nsMatch[1] . '\\' . $classMatch[1];
+
+                // Skip BaseAgent subclasses — they are not tool providers
+                try {
+                    if (class_exists($fqcn) && is_subclass_of($fqcn, \LaravelAIAgent\BaseAgent::class)) {
+                        continue;
+                    }
+                } catch (\Throwable $e) {
+                    continue;
+                }
+
+                $classes[] = $fqcn;
             }
         }
 

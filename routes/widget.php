@@ -2,8 +2,14 @@
 
 use Illuminate\Support\Facades\Route;
 use LaravelAIAgent\Http\Controllers\ChatController;
+use LaravelAIAgent\Http\Middleware\RateLimitMiddleware;
 
-Route::middleware(config('ai-agent.widget.middleware', ['web']))
+$widgetMiddleware = config('ai-agent.widget.middleware', ['web']);
+if (config('ai-agent.rate_limit.enabled', true)) {
+    $widgetMiddleware[] = RateLimitMiddleware::class;
+}
+
+Route::middleware($widgetMiddleware)
     ->prefix(config('ai-agent.widget.prefix', 'ai-agent'))
     ->group(function () {
         // Chat API endpoint

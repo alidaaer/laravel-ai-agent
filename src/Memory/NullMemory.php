@@ -21,6 +21,11 @@ class NullMemory implements MemoryInterface
         return [];
     }
 
+    public function recallForLLM(string $conversationId): array
+    {
+        return [];
+    }
+
     public function forget(string $conversationId): void
     {
         // Do nothing

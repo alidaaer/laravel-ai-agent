@@ -28,6 +28,14 @@ interface MemoryInterface
     public function recall(string $conversationId, int $limit = 50): array;
 
     /**
+     * Retrieve recent messages for LLM context with clean boundary logic.
+     *
+     * @param string $conversationId
+     * @return array
+     */
+    public function recallForLLM(string $conversationId): array;
+
+    /**
      * Clear the conversation history.
      *
      * @param string $conversationId

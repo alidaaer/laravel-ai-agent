@@ -52,7 +52,13 @@ class SessionMemory implements MemoryInterface
     {
         $key = $this->prefix . $conversationId;
         $messages = Session::get($key, []);
-
+        
+        // For history endpoint (limit >= 50), return all messages
+        if ($limit >= 50) {
+            return $messages;
+        }
+        
+        // For LLM, apply recent limit logic
         $recent = config('ai-agent.memory.recent_messages', 4);
         
         // Take last N messages, but ensure we start on a clean boundary
@@ -84,6 +90,12 @@ class SessionMemory implements MemoryInterface
         }
 
         return array_merge($history, $recentMessages);
+    }
+
+    public function recallForLLM(string $conversationId): array
+    {
+        // For session memory, use recall with small limit to trigger LLM logic
+        return $this->recall($conversationId, 10);
     }
 
     public function forget(string $conversationId): void

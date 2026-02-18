@@ -57,6 +57,9 @@ class AgentServiceProvider extends ServiceProvider
         $this->app->singleton(OutputSanitizer::class);
         $this->app->singleton(SecurityGuard::class);
         $this->app->singleton(AuditLogger::class);
+        
+        // Register Rate Limit Middleware
+        $this->app->singleton(\LaravelAIAgent\Http\Middleware\RateLimitMiddleware::class);
 
         // Register Memory
         $this->app->bind(MemoryInterface::class, function ($app) {
@@ -103,6 +106,11 @@ class AgentServiceProvider extends ServiceProvider
             $this->loadRoutesFrom(__DIR__ . '/../routes/widget.php');
         }
 
+        // Register Blade directive: @aiAgentWidget
+        \Illuminate\Support\Facades\Blade::directive('aiAgentWidget', function () {
+            return '<?php echo \LaravelAIAgent\Widget::render(); ?>';
+        });
+
         // Register agent routes
         $this->registerAgentRoutes();
 
@@ -135,6 +143,12 @@ class AgentServiceProvider extends ServiceProvider
             $instance = new $agentClass;
             $name = $agentClass::routeName();
             $middleware = $instance->routeMiddleware();
+            
+            // Always add rate limiting middleware if enabled
+            if (config('ai-agent.rate_limit.enabled', true)) {
+                $middleware[] = \LaravelAIAgent\Http\Middleware\RateLimitMiddleware::class;
+            }
+            
             $prefix = $instance->routePrefix();
 
             \Illuminate\Support\Facades\Route::middleware($middleware)

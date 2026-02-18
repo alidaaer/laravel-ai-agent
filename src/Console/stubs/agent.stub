@@ -84,4 +84,11 @@ class {{ class }} extends BaseAgent
     //         'button_size' => '60px',
     //     ];
     // }
+
+    // =========================================================================
+    // Usage: Add the widget to any Blade view
+    // =========================================================================
+    //
+    // {!! \{{ namespace }}\{{ class }}::widget() !!}
+    // <script src="/ai-agent/widget.js"></script>
 }

@@ -236,6 +236,12 @@ class ChatController extends Controller
             $filtered = array_values(array_filter($messages, function ($msg) {
                 return in_array($msg['role'], ['user', 'assistant']);
             }));
+            // dd($filtered);
+            // Ensure all messages have metadata array
+            // $filtered = array_map(function ($msg) {
+            //     $msg['metadata'] = $msg['metadata'] ?? [];
+            //     return $msg;
+            // }, $filtered);
 
             return response()->json([
                 'success' => true,
