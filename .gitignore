@@ -13,3 +13,4 @@ composer.lock
 Thumbs.db
 .idea/
 .vscode/
+*.lnk

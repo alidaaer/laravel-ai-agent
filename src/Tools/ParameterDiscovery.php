@@ -203,8 +203,8 @@ class ParameterDiscovery
             return;
         }
 
-        // Skip if it looks like a method name (camelCase with capital)
-        if (preg_match('/^[a-z]+[A-Z]/', $name)) {
+        // Skip if it looks like a method call (camelCase followed by parenthesis in source)
+        if (preg_match('/^[a-z]+[A-Z]/', $name) && preg_match('/\\$request\\s*->\\s*' . preg_quote($name) . '\\s*\\(/', $source)) {
             return;
         }
 

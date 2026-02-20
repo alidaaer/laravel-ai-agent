@@ -129,7 +129,7 @@ class ContentModerator
 
         // Log warnings
         if (!empty($warnings)) {
-            Log::info('AI Agent: Content moderation warnings', [
+            Log::debug('AI Agent: Content moderation warnings', [
                 'warnings' => $warnings,
                 'message' => substr($message, 0, 200),
             ]);
@@ -167,7 +167,7 @@ class ContentModerator
     public function requiresConfirmation(string $message): bool
     {
         $confirmPatterns = [
-            '/delete/i', '/remove/i', '/cancel/i', '/حذف/u', '/إلغاء/u',
+            '/delete/i', '/remove/i', '/cancel/i',
             '/drop/i', '/truncate/i', '/destroy/i', '/wipe/i',
         ];
 

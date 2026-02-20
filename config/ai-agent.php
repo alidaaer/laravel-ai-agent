@@ -20,7 +20,7 @@ return [
     | In production, you should set this to true or configure proper certificates.
     |
     */
-    'verify_ssl' => env('AI_AGENT_VERIFY_SSL', false),
+    'verify_ssl' => env('AI_AGENT_VERIFY_SSL', true),
 
     /*
     |--------------------------------------------------------------------------
@@ -46,10 +46,6 @@ return [
             'timeout' => 60,
         ],
 
-        'ollama' => [
-            'base_url' => env('OLLAMA_BASE_URL', 'http://localhost:11434'),
-            'model' => env('OLLAMA_MODEL', env('AI_AGENT_MODEL','llama3')),
-        ],
 
         'gemini' => [
             'api_key' => env('GEMINI_API_KEY',env('AI_AGENT_API_KEY')),

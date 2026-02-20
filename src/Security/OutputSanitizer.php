@@ -131,8 +131,8 @@ class OutputSanitizer
             'i was instructed to',
             'my programming says',
             'according to my instructions',
-            'تعليماتي هي',
-            'البرومبت الخاص بي',
+            'here are my instructions',
+            'my initial prompt is',
         ];
 
         foreach ($leakageIndicators as $indicator) {

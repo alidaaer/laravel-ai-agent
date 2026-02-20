@@ -35,7 +35,7 @@ class SecurityGuard
      */
     protected array $destructiveActions = [
         'delete', 'remove', 'cancel', 'destroy', 'drop', 'truncate',
-        'wipe', 'clear', 'reset', 'حذف', 'إلغاء', 'مسح',
+        'wipe', 'clear', 'reset',
     ];
 
     public function __construct()
@@ -85,7 +85,7 @@ class SecurityGuard
         $result = $this->sanitizer->sanitize($output);
         
         if ($result['sanitized']) {
-            Log::info('AI Agent: Output was sanitized', [
+            Log::debug('AI Agent: Output was sanitized', [
                 'redactions_count' => count($result['redactions']),
             ]);
         }
@@ -160,7 +160,7 @@ class SecurityGuard
     protected function getConfirmationMessage(string $toolName, array $arguments): string
     {
         $argsStr = json_encode($arguments, JSON_UNESCAPED_UNICODE);
-        return "⚠️ تأكيد العملية:\nالأداة: {$toolName}\nالمعاملات: {$argsStr}\n\nهل أنت متأكد؟ (نعم/لا)";
+        return "\u26a0\ufe0f Confirm action:\nTool: {$toolName}\nArguments: {$argsStr}\n\nAre you sure? (yes/no)";
     }
 
     /**

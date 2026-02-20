@@ -402,7 +402,6 @@ class SmartSchemaGenerator
                 'type' => $typeInfo['type'],
                 'description' => $this->generateParamDescription($paramName),
                 'required' => $typeInfo['required'] && !$typeInfo['nullable'],
-                'rules' => '',
             ];
 
             if (isset($typeInfo['default'])) {

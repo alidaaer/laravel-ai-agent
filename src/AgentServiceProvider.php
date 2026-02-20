@@ -88,6 +88,14 @@ class AgentServiceProvider extends ServiceProvider
             __DIR__ . '/../config/ai-agent.php' => config_path('ai-agent.php'),
         ], 'ai-agent-config');
 
+        // Load translations
+        $this->loadTranslationsFrom(__DIR__ . '/../resources/lang', 'ai-agent');
+
+        // Publish translations
+        $this->publishes([
+            __DIR__ . '/../resources/lang' => $this->app->langPath('vendor/ai-agent'),
+        ], 'ai-agent-lang');
+
         // Load migrations
         $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
 

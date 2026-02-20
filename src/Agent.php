@@ -99,7 +99,7 @@ class Agent
             ? $this->toolDiscovery->discoverForAgent($classes, $this->agentScope)
             : $this->toolDiscovery->discoverPublic($classes);
 
-        \Illuminate\Support\Facades\Log::info('🛠️ tools() called', [
+        \Illuminate\Support\Facades\Log::debug('AI Agent: tools() called', [
             'classes' => $classes,
             'agent_scope' => $this->agentScope,
             'discovered_count' => count($tools),
@@ -244,7 +244,7 @@ class Agent
         $history = $memory->recallForLLM($this->conversationId);
 
         if ($loggingEnabled) {
-            \Illuminate\Support\Facades\Log::info('🧠 Memory state', [
+            \Illuminate\Support\Facades\Log::debug('AI Agent: Memory state', [
                 'conversation_id' => $this->conversationId,
                 'history_count' => count($history),
                 'history_roles' => array_map(fn($m) => $m['role'] ?? 'unknown', $history),
@@ -253,42 +253,9 @@ class Agent
             ]);
         }
 
-        // Build options
-        $options = $this->options;
-        
-        // Build system prompt: user prompt + default prompt + security prompt
-        $systemParts = [];
-        
-        if ($this->systemPrompt) {
-            $systemParts[] = $this->systemPrompt;
-        }
-        
-        // Add default system prompt (formatting instructions)
-        $defaultPrompt = config('ai-agent.default_system_prompt');
-        if ($defaultPrompt === null) {
-            // Load from package default file
-            $defaultPrompt = file_get_contents(__DIR__ . '/../resources/prompts/default.txt');
-        }
-        if ($defaultPrompt) {
-            $systemParts[] = $defaultPrompt;
-        }
 
-        // Add Smart Resolution instructions if enabled
-        if (config('ai-agent.smart_resolution.enabled', false)) {
-            $systemParts[] = $this->getSmartResolutionPrompt();
-        }
-        
-        // Add security prompt (hardening)
-        if (config('ai-agent.security.enabled', true)) {
-            $securityPrompt = $security->getSecurityPrompt();
-            if ($securityPrompt) {
-                $systemParts[] = $securityPrompt;
-            }
-        }
-        
-        if (!empty($systemParts)) {
-            $options['system'] = implode("\n\n---\n\n", $systemParts);
-        }
+        // Build options with full system prompt
+        $options = $this->buildOptions($security);
 
         // Add structured output schema if set
         if ($this->structuredSchema) {
@@ -333,7 +300,7 @@ class Agent
         }
 
         if ($loggingEnabled) {
-            \Illuminate\Support\Facades\Log::info('🔍 Agent runLoop result', [
+            \Illuminate\Support\Facades\Log::debug('AI Agent: runLoop result', [
                 'content_length' => strlen($response->content),
                 'content_preview' => mb_substr($response->content, 0, 200),
                 'has_tool_calls' => $response->hasToolCalls(),
@@ -347,7 +314,7 @@ class Agent
             $content = $security->sanitizeOutput($content);
 
             if ($loggingEnabled) {
-                \Illuminate\Support\Facades\Log::info('🔍 After sanitizeOutput', [
+                \Illuminate\Support\Facades\Log::debug('AI Agent: After sanitizeOutput', [
                     'content_length' => strlen($content),
                     'content_preview' => mb_substr($content, 0, 200),
                 ]);
@@ -367,24 +334,225 @@ class Agent
      */
     public function stream(string $message, callable $onChunk): void
     {
+        // Initialize security guard
+        $security = $this->getSecurityGuard();
+
+        // Content Moderation - validate input
+        if (config('ai-agent.security.enabled', true)) {
+            $validation = $security->validateInput($message);
+
+            if (!$validation['valid']) {
+                return;
+            }
+
+            $message = $validation['sanitized'];
+        }
+
         $driver = $this->getDriver();
         $memory = $this->getMemory();
-        $history = $memory->recall($this->conversationId);
+        $history = $memory->recallForLLM($this->conversationId);
 
-        $options = $this->options;
-        if ($this->systemPrompt) {
-            $options['system'] = $this->systemPrompt;
+        // Build options with full system prompt
+        $options = $this->buildOptions($security);
+
+        $memory->remember($this->conversationId, ['role' => 'user', 'content' => $message]);
+
+        // Apply middleware pipeline if configured
+        if (!empty($this->middleware)) {
+            $prompt = new AgentPrompt(
+                message: $message,
+                system: $options['system'] ?? null,
+                history: $history,
+                options: $options,
+                tools: array_keys($this->toolRegistry->all()),
+                conversationId: $this->conversationId,
+            );
+
+            app(\Illuminate\Pipeline\Pipeline::class)
+                ->send($prompt)
+                ->through($this->middleware)
+                ->then(function (AgentPrompt $prompt) use ($driver, $onChunk, $security, $memory) {
+                    $opts = $prompt->options;
+                    if ($prompt->system) {
+                        $opts['system'] = $prompt->system;
+                    }
+                    $response = $driver->stream($prompt->message, $this->toolRegistry->all(), $prompt->history, $onChunk);
+
+                    $content = $response->content;
+                    if (config('ai-agent.security.enabled', true)) {
+                        $content = $security->sanitizeOutput($content);
+                    }
+
+                    $memory->remember($this->conversationId, ['role' => 'assistant', 'content' => $content]);
+                    return $response;
+                });
+        } else {
+            $response = $driver->stream($message, $this->toolRegistry->all(), $history, $onChunk);
+
+            // Output Sanitization
+            $content = $response->content;
+            if (config('ai-agent.security.enabled', true)) {
+                $content = $security->sanitizeOutput($content);
+            }
+
+            $memory->remember($this->conversationId, ['role' => 'assistant', 'content' => $content]);
+        }
+    }
+
+    /**
+     * Chat with real-time SSE events.
+     * 
+     * @param string $message The user message
+     * @param callable $onEvent Callback: fn(string $event, array $data) => void
+     * @return string The final response content
+     */
+    public function chatWithEvents(string $message, callable $onEvent): string
+    {
+        $security = $this->getSecurityGuard();
+
+        // Content Moderation
+        if (config('ai-agent.security.enabled', true)) {
+            $validation = $security->validateInput($message);
+            if (!$validation['valid']) {
+                $onEvent('error', ['message' => $validation['error']]);
+                return '⚠️ ' . $validation['error'];
+            }
+            $message = $validation['sanitized'];
+        }
+
+        event(new AgentStarted($this->name, $message, $this->conversationId));
+
+        $driver = $this->getDriver();
+        $memory = $this->getMemory();
+        $history = $memory->recallForLLM($this->conversationId);
+
+        // Build options with full system prompt
+        $options = $this->buildOptions($security);
+
+        // Add structured output schema if set
+        if ($this->structuredSchema) {
+            $options['response_format'] = [
+                'type' => 'json_schema',
+                'json_schema' => [
+                    'name' => 'structured_output',
+                    'strict' => true,
+                    'schema' => $this->structuredSchema,
+                ],
+            ];
         }
 
         $memory->remember($this->conversationId, ['role' => 'user', 'content' => $message]);
 
-        $response = $driver->stream($message, $this->toolRegistry->all(), $history, $onChunk);
+        // Send initial thinking event
+        $onEvent('thinking', []);
 
-        $memory->remember($this->conversationId, ['role' => 'assistant', 'content' => $response->content]);
+        // Run the loop with events
+        $toolExecutionCount = 0;
+
+        // Apply middleware pipeline if configured
+        if (!empty($this->middleware)) {
+            $prompt = new AgentPrompt(
+                message: $message,
+                system: $options['system'] ?? null,
+                history: $history,
+                options: $options,
+                tools: array_keys($this->toolRegistry->all()),
+                conversationId: $this->conversationId,
+            );
+
+            $response = app(\Illuminate\Pipeline\Pipeline::class)
+                ->send($prompt)
+                ->through($this->middleware)
+                ->then(function (AgentPrompt $prompt) use ($driver, $security, $memory, $onEvent, &$toolExecutionCount) {
+                    $opts = $prompt->options;
+                    if ($prompt->system) {
+                        $opts['system'] = $prompt->system;
+                    }
+                    return $this->runLoop($driver, $prompt->message, $prompt->history, $opts, $security, $memory, $onEvent, $toolExecutionCount);
+                });
+        } else {
+            $response = $this->runLoop($driver, $message, $history, $options, $security, $memory, $onEvent, $toolExecutionCount);
+        }
+
+        // Output Sanitization
+        $content = $response->content;
+        if (config('ai-agent.security.enabled', true)) {
+            $content = $security->sanitizeOutput($content);
+        }
+
+        // Store response with task count metadata
+        $metadata = ['task_count' => $toolExecutionCount];
+        $memory->remember($this->conversationId, [
+            'role' => 'assistant', 
+            'content' => $content,
+            'metadata' => $metadata
+        ]);
+
+        event(new AgentCompleted($this->name, $response, $this->conversationId));
+
+        // Send final done event
+        $onEvent('done', ['content' => $content]);
+
+        return $content;
+    }
+
+    /**
+     * Build system prompt options (shared between chat, chatWithEvents, stream).
+     */
+    protected function buildOptions(?SecurityGuard $security = null): array
+    {
+        $options = $this->options;
+        $systemParts = [];
+
+        if ($this->systemPrompt) {
+            $systemParts[] = $this->systemPrompt;
+        }
+
+        // Add default system prompt (formatting instructions)
+        $defaultPrompt = config('ai-agent.default_system_prompt');
+        if ($defaultPrompt === null) {
+            $promptFile = __DIR__ . '/../resources/prompts/default.txt';
+            if (file_exists($promptFile)) {
+                $defaultPrompt = file_get_contents($promptFile);
+            }
+        }
+        if ($defaultPrompt) {
+            $systemParts[] = $defaultPrompt;
+        }
+
+        // Add Smart Resolution instructions if enabled
+        if (config('ai-agent.smart_resolution.enabled', false)) {
+            $systemParts[] = $this->getSmartResolutionPrompt();
+        }
+
+        // Add security prompt (hardening)
+        if ($security && config('ai-agent.security.enabled', true)) {
+            $securityPrompt = $security->getSecurityPrompt();
+            if ($securityPrompt) {
+                $systemParts[] = $securityPrompt;
+            }
+        }
+
+        if (!empty($systemParts)) {
+            $options['system'] = implode("\n\n---\n\n", $systemParts);
+        }
+
+        return $options;
     }
 
     /**
      * Run the agent loop (handle tool calls).
+     * Unified method that handles both regular chat and SSE events.
+     *
+     * @param DriverInterface $driver
+     * @param string $message
+     * @param array $history
+     * @param array $options
+     * @param SecurityGuard|null $security
+     * @param MemoryInterface|null $memory
+     * @param callable|null $onEvent Optional SSE event callback
+     * @param int $toolExecutionCount Reference counter for tool executions
+     * @return AgentResponse
      */
     protected function runLoop(
         DriverInterface $driver,
@@ -392,7 +560,9 @@ class Agent
         array $history,
         array $options,
         ?SecurityGuard $security = null,
-        ?\LaravelAIAgent\Contracts\MemoryInterface $memory = null
+        ?MemoryInterface $memory = null,
+        ?callable $onEvent = null,
+        int &$toolExecutionCount = 0
     ): AgentResponse {
         $maxIterations = config('ai-agent.security.max_iterations', $this->maxIterations);
         $iterations = 0;
@@ -402,7 +572,7 @@ class Agent
         $loggingEnabled = config('ai-agent.logging.enabled', true);
 
         if ($loggingEnabled) {
-            \Illuminate\Support\Facades\Log::info('🔍 runLoop start', [
+            \Illuminate\Support\Facades\Log::debug('AI Agent: runLoop start', [
                 'registered_tools' => array_keys($tools),
                 'tools_count' => count($tools),
                 'history_count' => count($history),
@@ -415,17 +585,26 @@ class Agent
 
             // Check iteration limit with security
             if ($security && !$security->checkIterationLimit($iterations)) {
+                $iterationMsg = trans('ai-agent::messages.max_iterations_reached');
+                if ($onEvent) {
+                    $onEvent('error', ['message' => $iterationMsg]);
+                }
                 return new AgentResponse(
-                    content: '⚠️ تم الوصول للحد الأقصى من العمليات.',
+                    content: '⚠️ ' . $iterationMsg,
                     toolCalls: [],
                     usage: [],
                     finishReason: 'iteration_limit'
                 );
             }
 
+            // Event: thinking before LLM call (skip first iteration — already sent by chatWithEvents)
+            if ($onEvent && $iterations > 1) {
+                $onEvent('thinking', []);
+            }
+
             // Call the LLM
             if ($loggingEnabled) {
-                \Illuminate\Support\Facades\Log::info('📡 LLM prompt', [
+                \Illuminate\Support\Facades\Log::debug('AI Agent: LLM prompt', [
                     'iteration' => $iterations,
                     'tools_sent' => count($tools),
                     'tool_names_sent' => array_keys($tools),
@@ -438,7 +617,7 @@ class Agent
             $response = $driver->prompt($message, $tools, $history, $options);
 
             if ($loggingEnabled) {
-                \Illuminate\Support\Facades\Log::info('📡 LLM response', [
+                \Illuminate\Support\Facades\Log::debug('AI Agent: LLM response', [
                     'iteration' => $iterations,
                     'content_length' => strlen($response->content),
                     'has_tool_calls' => $response->hasToolCalls(),
@@ -458,7 +637,7 @@ class Agent
                         ->join("\n");
                     
                     return new AgentResponse(
-                        content: $resultsText ?: 'تم تنفيذ الأداة بنجاح.',
+                        content: $resultsText ?: trans('ai-agent::messages.tool_executed_successfully'),
                         toolCalls: [],
                         usage: $response->usage,
                         finishReason: $response->finishReason
@@ -476,6 +655,9 @@ class Agent
                     );
                     
                     if (!$check['allowed']) {
+                        if ($onEvent) {
+                            $onEvent('error', ['message' => $check['reason']]);
+                        }
                         return new AgentResponse(
                             content: '⚠️ ' . $check['reason'],
                             toolCalls: [],
@@ -496,14 +678,41 @@ class Agent
                 }
             }
 
+            // Event: tool_start for each tool (SSE only)
+            if ($onEvent) {
+                foreach ($response->toolCalls as $toolCall) {
+                    $toolDef = $this->toolRegistry->find($toolCall['name']);
+                    $onEvent('tool_start', [
+                        'name' => $toolCall['name'],
+                        'description' => $toolDef['description'] ?? null,
+                        'arguments' => $toolCall['arguments'] ?? [],
+                    ]);
+                }
+            }
+
             // Execute tool calls
             $toolResults = $this->toolExecutor->executeMany($response->toolCalls, $this->context);
             $lastToolResults = $toolResults;
 
+            // Track tool execution count
+            $toolExecutionCount += count($response->toolCalls);
+
+            // Event: tool_done for each tool (SSE only)
+            if ($onEvent) {
+                foreach ($toolResults as $result) {
+                    $toolDef = $this->toolRegistry->find($result['name']);
+                    $onEvent('tool_done', [
+                        'name' => $result['name'],
+                        'description' => $toolDef['description'] ?? null,
+                        'success' => $result['success'],
+                    ]);
+                }
+            }
+
             // Log tool calls and results
             if ($loggingEnabled) {
                 foreach ($toolResults as $result) {
-                    \Illuminate\Support\Facades\Log::info('🔧 AI Tool Call', [
+                    \Illuminate\Support\Facades\Log::debug('AI Agent: Tool Call', [
                         'tool' => $result['name'],
                         'success' => $result['success'],
                         'result' => $result['success'] ? $result['result'] : null,
@@ -549,256 +758,9 @@ class Agent
             }
 
             // Continue with a message asking LLM to respond based on tool results
-            $message = 'بناءً على نتيجة الأداة، أجب على سؤال المستخدم.';
+            $message = trans('ai-agent::messages.answer_based_on_tool_results');
             
             // Configurable delay between iterations (some APIs like Gemini need it)
-            $loopDelay = config('ai-agent.performance.loop_delay_ms', 0);
-            if ($loopDelay > 0) {
-                usleep($loopDelay * 1000);
-            }
-        }
-
-        throw new \RuntimeException("Agent exceeded maximum iterations ({$this->maxIterations})");
-    }
-
-    /**
-     * Chat with real-time SSE events.
-     * 
-     * @param string $message The user message
-     * @param callable $onEvent Callback: fn(string $event, array $data) => void
-     * @return string The final response content
-     */
-    public function chatWithEvents(string $message, callable $onEvent): string
-    {
-        $security = $this->getSecurityGuard();
-
-        // Content Moderation
-        if (config('ai-agent.security.enabled', true)) {
-            $validation = $security->validateInput($message);
-            if (!$validation['valid']) {
-                $onEvent('error', ['message' => $validation['error']]);
-                return '⚠️ ' . $validation['error'];
-            }
-            $message = $validation['sanitized'];
-        }
-
-        event(new AgentStarted($this->name, $message, $this->conversationId));
-
-        $driver = $this->getDriver();
-        $memory = $this->getMemory();
-        $history = $memory->recall($this->conversationId);
-
-        // Build options (same as chat())
-        $options = $this->options;
-        $systemParts = [];
-        
-        if ($this->systemPrompt) {
-            $systemParts[] = $this->systemPrompt;
-        }
-        
-        $defaultPrompt = config('ai-agent.default_system_prompt');
-        if ($defaultPrompt === null) {
-            // Load from package default file
-            $defaultPrompt = file_get_contents(__DIR__ . '/../resources/prompts/default.txt');
-        }
-        if ($defaultPrompt) {
-            $systemParts[] = $defaultPrompt;
-        }
-
-        if (config('ai-agent.smart_resolution.enabled', false)) {
-            $systemParts[] = $this->getSmartResolutionPrompt();
-        }
-        
-        if (config('ai-agent.security.enabled', true)) {
-            $securityPrompt = $security->getSecurityPrompt();
-            if ($securityPrompt) {
-                $systemParts[] = $securityPrompt;
-            }
-        }
-        
-        if (!empty($systemParts)) {
-            $options['system'] = implode("\n\n---\n\n", $systemParts);
-        }
-
-        $memory->remember($this->conversationId, ['role' => 'user', 'content' => $message]);
-
-        // Send initial thinking event
-        $onEvent('thinking', []);
-
-        // Run the loop with events
-        $toolExecutionCount = 0;
-        $response = $this->runLoopWithEvents($driver, $message, $history, $options, $security, $memory, $onEvent, $toolExecutionCount);
-
-        // Output Sanitization
-        $content = $response->content;
-        if (config('ai-agent.security.enabled', true)) {
-            $content = $security->sanitizeOutput($content);
-        }
-
-        // Store response with task count metadata
-        $metadata = ['task_count' => $toolExecutionCount];
-        $memory->remember($this->conversationId, [
-            'role' => 'assistant', 
-            'content' => $content,
-            'metadata' => $metadata
-        ]);
-
-        event(new AgentCompleted($this->name, $response, $this->conversationId));
-
-        // Send final done event
-        $onEvent('done', ['content' => $content]);
-
-        return $content;
-    }
-
-    /**
-     * Run the agent loop with SSE event callbacks.
-     */
-    protected function runLoopWithEvents(
-        DriverInterface $driver,
-        string $message,
-        array $history,
-        array $options,
-        ?SecurityGuard $security,
-        ?\LaravelAIAgent\Contracts\MemoryInterface $memory,
-        callable $onEvent,
-        int &$toolExecutionCount = 0
-    ): AgentResponse {
-        $maxIterations = config('ai-agent.security.max_iterations', $this->maxIterations);
-        $iterations = 0;
-        $tools = $this->toolRegistry->all();
-        $originalMessage = $message;
-        $lastToolResults = [];
-
-        while ($iterations < $maxIterations) {
-            $iterations++;
-
-            // Security: iteration limit
-            if ($security && !$security->checkIterationLimit($iterations)) {
-                $onEvent('error', ['message' => 'تم الوصول للحد الأقصى من العمليات.']);
-                return new AgentResponse(
-                    content: '⚠️ تم الوصول للحد الأقصى من العمليات.',
-                    toolCalls: [],
-                    usage: [],
-                    finishReason: 'iteration_limit'
-                );
-            }
-
-            // Event: thinking before LLM call
-            if ($iterations > 1) {
-                $onEvent('thinking', []);
-            }
-
-            // Call LLM
-            $response = $driver->prompt($message, $tools, $history, $options);
-
-            // If no tool calls, we're done
-            if (!$response->hasToolCalls()) {
-                if (empty($response->content) && !empty($lastToolResults)) {
-                    $resultsText = collect($lastToolResults)
-                        ->filter(fn($r) => $r['success'])
-                        ->map(fn($r) => is_string($r['result']) ? $r['result'] : json_encode($r['result'], JSON_UNESCAPED_UNICODE))
-                        ->join("\n");
-                    
-                    return new AgentResponse(
-                        content: $resultsText ?: 'تم تنفيذ الأداة بنجاح.',
-                        toolCalls: [],
-                        usage: $response->usage,
-                        finishReason: $response->finishReason
-                    );
-                }
-                return $response;
-            }
-
-            // Security check for tool calls
-            if ($security) {
-                foreach ($response->toolCalls as $toolCall) {
-                    $check = $security->checkToolCall(
-                        $toolCall['name'],
-                        $toolCall['arguments'] ?? []
-                    );
-                    
-                    if (!$check['allowed']) {
-                        $onEvent('error', ['message' => $check['reason']]);
-                        return new AgentResponse(
-                            content: '⚠️ ' . $check['reason'],
-                            toolCalls: [],
-                            usage: $response->usage,
-                            finishReason: 'security_blocked'
-                        );
-                    }
-                    
-                    if (config('ai-agent.security.audit.enabled', true)) {
-                        app(AuditLogger::class)->logToolCall(
-                            $toolCall['name'],
-                            $toolCall['arguments'] ?? [],
-                            auth()->id(),
-                            $this->conversationId
-                        );
-                    }
-                }
-            }
-
-            // Event: tool_start for each tool
-            foreach ($response->toolCalls as $toolCall) {
-                $toolDef = $this->toolRegistry->find($toolCall['name']);
-                $onEvent('tool_start', [
-                    'name' => $toolCall['name'],
-                    'description' => $toolDef['description'] ?? null,
-                    'arguments' => $toolCall['arguments'] ?? [],
-                ]);
-            }
-
-            // Execute tool calls
-            $toolResults = $this->toolExecutor->executeMany($response->toolCalls, $this->context);
-            $lastToolResults = $toolResults;
-            
-            // Track tool execution count
-            $toolExecutionCount += count($response->toolCalls);
-
-            // Event: tool_done for each tool
-            foreach ($toolResults as $result) {
-                $toolDef = $this->toolRegistry->find($result['name']);
-                $onEvent('tool_done', [
-                    'name' => $result['name'],
-                    'description' => $toolDef['description'] ?? null,
-                    'success' => $result['success'],
-                ]);
-            }
-
-            // Build history (same as runLoop)
-            if ($iterations === 1) {
-                $history[] = ['role' => 'user', 'content' => $originalMessage];
-            }
-
-            $assistantMsg = [
-                'role' => 'assistant',
-                'content' => $response->content,
-                'tool_calls' => $response->toolCalls,
-            ];
-            $history[] = $assistantMsg;
-            if ($memory) {
-                $memory->remember($this->conversationId, $assistantMsg);
-            }
-
-            foreach ($toolResults as $result) {
-                $toolMsg = [
-                    'role' => 'tool',
-                    'tool_call_id' => $result['tool_call_id'],
-                    'tool_name' => $result['name'],
-                    'content' => $result['success'] 
-                        ? json_encode($result['result'], JSON_UNESCAPED_UNICODE)
-                        : "Error: " . $result['error'],
-                ];
-                $history[] = $toolMsg;
-                if ($memory) {
-                    $memory->remember($this->conversationId, $toolMsg);
-                }
-            }
-
-            $message = 'بناءً على نتيجة الأداة، أجب على سؤال المستخدم.';
-            
-            // Configurable delay
             $loopDelay = config('ai-agent.performance.loop_delay_ms', 0);
             if ($loopDelay > 0) {
                 usleep($loopDelay * 1000);

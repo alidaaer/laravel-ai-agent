@@ -267,8 +267,8 @@ class ToolExecutor
                         $arguments[$paramName] = $innerArray;
                         
                         // Log this transformation for debugging
-                        if (config('ai-agent.debug', false)) {
-                            \Log::info('[AI-Agent] Unrapped single-item array', [
+                        if (config('ai-agent.logging.enabled', true)) {
+                            \Illuminate\Support\Facades\Log::debug('AI Agent: Unwrapped single-item array', [
                                 'tool' => $tool['name'],
                                 'parameter' => $paramName,
                                 'original' => $value,

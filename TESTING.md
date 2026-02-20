@@ -11,7 +11,7 @@
     "repositories": [
         {
             "type": "path",
-            "url": "D:/packages/laravel-ai-agent"
+            "url": "../laravel-ai-agent"
         }
     ],
     "require": {
@@ -49,21 +49,21 @@ php artisan make:service WeatherService
 
 namespace App\Services;
 
-use LaravelAIAgent\Attributes\Tool;
+use LaravelAIAgent\Attributes\AsAITool;
 
 class WeatherService
 {
-    #[Tool("Get current weather for a city")]
+    #[AsAITool("Get current weather for a city")]
     public function getWeather(string $city): string
     {
-        // محاكاة بيانات الطقس
+        // Simulate weather data
         $temps = ['Riyadh' => 35, 'Jeddah' => 38, 'Dubai' => 40];
         $temp = $temps[$city] ?? rand(20, 40);
         
-        return "الطقس في {$city}: {$temp}°C ☀️";
+        return "Weather in {$city}: {$temp}°C ☀️";
     }
 
-    #[Tool("Get weather forecast for next days")]
+    #[AsAITool("Get weather forecast for next days")]
     public function getForecast(string $city, int $days = 3): array
     {
         $forecast = [];
@@ -120,7 +120,7 @@ cd test-agent
 ### 2. ربط الباكج
 
 ```bash
-composer config repositories.ai-agent path D:/packages/laravel-ai-agent
+composer config repositories.ai-agent path ../laravel-ai-agent
 composer require alidaaer/laravel-ai-agent:*
 ```
 
@@ -161,7 +161,7 @@ php artisan serve
 ## الطريقة 3: تشغيل الاختبارات
 
 ```bash
-cd D:/packages/laravel-ai-agent
+cd /path/to/laravel-ai-agent
 
 # تثبيت dependencies
 composer install
