@@ -1,20 +1,29 @@
 {
     "name": "alidaaer/laravel-ai-agent",
     "description": "Give your Laravel app a brain, safely. Build AI Agents that can execute real actions in your application.",
+    "homepage": "https://github.com/alidaaer/laravel-ai-agent",
+    "type": "library",
     "keywords": [
         "laravel",
         "ai",
         "agent",
         "openai",
         "anthropic",
+        "gemini",
+        "deepseek",
         "llm",
         "tools",
         "function-calling"
     ],
     "license": "MIT",
+    "support": {
+        "issues": "https://github.com/alidaaer/laravel-ai-agent/issues",
+        "source": "https://github.com/alidaaer/laravel-ai-agent"
+    },
     "authors": [
         {
             "name": "Ali Daaer",
+            "email": "alidaaer@gmail.com",
             "homepage": "https://github.com/alidaaer"
         }
     ],

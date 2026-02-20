@@ -244,22 +244,6 @@ Supported types: `string`, `integer`, `number`, `boolean`, `array`. Without `:ty
 
 > 💡 **When to use `params`?** Only when auto-discovery isn't enough — e.g., dynamic `Request` inputs, or when you want custom descriptions for the AI.
 
-### With Validation Rules
-
-```php
-use LaravelAIAgent\Attributes\Rules;
-
-#[AsAITool('Send email to customer')]
-public function sendEmail(
-    #[Rules('required|email')] string $email,
-    #[Rules('required|max:100')] string $subject,
-    #[Rules('required')] string $body
-): string {
-    // Validation happens automatically!
-    Mail::to($email)->send(new CustomerEmail($subject, $body));
-    return "Email sent!";
-}
-```
 
 ### Smart Type Inference
 
