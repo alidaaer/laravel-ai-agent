@@ -108,6 +108,7 @@ class SmartSchemaGenerator
             'bool', 'boolean' => 'boolean',
             'array' => 'array',
             'object', 'stdClass' => 'object',
+            'string' => 'string',
             default => 'string',
         };
     }
@@ -289,18 +290,62 @@ class SmartSchemaGenerator
 
             if (is_string($config)) {
                 // Simple: 'name' => 'description' or 'name:type' => 'description'
-                $parameters[$name] = [
-                    'type' => $explicitType ?? $this->inferTypeFromName($name),
-                    'description' => $config,
-                    'required' => true,
-                ];
+                $paramType = $explicitType ?? $this->inferTypeFromName($name);
+                
+                // For array types, be more specific about what kind of array
+                if ($paramType === 'array') {
+                    // Check if the name suggests this is an object/data container
+                    if (preg_match('/^(data|payload|params|attributes|config|settings|options|info|details|request|response|result|item|order|booking|product|customer|user)/i', $name)) {
+                        // This looks like an object container, add additional properties hint
+                        $parameters[$name] = [
+                            'type' => 'object',
+                            'description' => $config,
+                            'required' => true,
+                        ];
+                    } else {
+                        // Regular array
+                        $parameters[$name] = [
+                            'type' => 'array',
+                            'description' => $config,
+                            'required' => true,
+                            'items' => ['type' => 'string'], // Default item type
+                        ];
+                    }
+                } else {
+                    $parameters[$name] = [
+                        'type' => $paramType,
+                        'description' => $config,
+                        'required' => true,
+                    ];
+                }
             } elseif (is_array($config)) {
                 // Full config: 'name' => ['type' => 'string', 'description' => '...']
-                $parameters[$name] = [
-                    'type' => $explicitType ?? $config['type'] ?? $this->inferTypeFromName($name),
-                    'description' => $config['description'] ?? $this->generateParamDescription($name),
-                    'required' => $config['required'] ?? true,
-                ];
+                $paramType = $explicitType ?? $config['type'] ?? $this->inferTypeFromName($name);
+                
+                if ($paramType === 'array' && !isset($config['items'])) {
+                    // Check if this should be an object instead
+                    if (preg_match('/^(data|payload|params|attributes|config|settings|options|info|details|request|response|result|item|order|booking|product|customer|user)/i', $name)) {
+                        $parameters[$name] = [
+                            'type' => 'object',
+                            'description' => $config['description'] ?? $this->generateParamDescription($name),
+                            'required' => $config['required'] ?? true,
+                        ];
+                    } else {
+                        $parameters[$name] = [
+                            'type' => 'array',
+                            'description' => $config['description'] ?? $this->generateParamDescription($name),
+                            'required' => $config['required'] ?? true,
+                            'items' => ['type' => 'string'], // Default item type
+                        ];
+                    }
+                } else {
+                    $parameters[$name] = [
+                        'type' => $paramType,
+                        'description' => $config['description'] ?? $this->generateParamDescription($name),
+                        'required' => $config['required'] ?? true,
+                    ];
+                }
+                
                 if (isset($config['default'])) {
                     $parameters[$name]['default'] = $config['default'];
                 }

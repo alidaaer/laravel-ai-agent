@@ -53,6 +53,7 @@ class ToolValidator
                 'number' => 'numeric',
                 'boolean' => 'boolean',
                 'array' => 'array',
+                'object' => 'array',
                 default => 'string',
             };
 

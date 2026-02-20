@@ -53,6 +53,9 @@ class ToolExecutor
             // 4. Validate arguments
             $validatedArgs = $this->validator->validate($tool, $normalizedArgs);
 
+            // 4.5. Unwrap single-item arrays if needed (common AI quirk)
+            $validatedArgs = $this->unwrapSingleItemArrays($tool, $validatedArgs);
+
             // 4. Check permission if required
             if ($tool['permission'] && !$this->checkPermission($tool['permission'], $context)) {
                 throw new ToolExecutionException("Permission denied for tool '{$toolName}'");
@@ -225,5 +228,60 @@ class ToolExecutor
         }
 
         return $results;
+    }
+
+    /**
+     * Unwrap single-item arrays that AI models sometimes create.
+     * 
+     * Some AI models wrap associative arrays in a numeric array:
+     * {"data": [{"field": "value"}]} instead of {"data": {"field": "value"}}
+     * 
+     * This method detects and unwraps such cases when the method expects an array.
+     */
+    protected function unwrapSingleItemArrays(array $tool, array $arguments): array
+    {
+        try {
+            $cacheKey = $tool['class'] . '::' . $tool['method'];
+            $reflection = self::$reflectionCache[$cacheKey]
+                ??= new \ReflectionMethod($tool['class'], $tool['method']);
+            
+            foreach ($reflection->getParameters() as $param) {
+                $paramName = $param->getName();
+                
+                // Check if this parameter exists in arguments and is an array
+                if (!isset($arguments[$paramName]) || !is_array($arguments[$paramName])) {
+                    continue;
+                }
+                
+                $value = $arguments[$paramName];
+                
+                // Check if it's a single-item array with numeric keys
+                // that contains an associative array
+                if (count($value) === 1 && isset($value[0]) && is_array($value[0])) {
+                    // Check if the inner array has string keys (associative)
+                    $innerArray = $value[0];
+                    $hasStringKeys = count(array_filter(array_keys($innerArray), 'is_string')) > 0;
+                    
+                    if ($hasStringKeys) {
+                        // Unwrap the array
+                        $arguments[$paramName] = $innerArray;
+                        
+                        // Log this transformation for debugging
+                        if (config('ai-agent.debug', false)) {
+                            \Log::info('[AI-Agent] Unrapped single-item array', [
+                                'tool' => $tool['name'],
+                                'parameter' => $paramName,
+                                'original' => $value,
+                                'unwrapped' => $innerArray
+                            ]);
+                        }
+                    }
+                }
+            }
+        } catch (\ReflectionException $e) {
+            // If reflection fails, just return original arguments
+        }
+        
+        return $arguments;
     }
 }
