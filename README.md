@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="300" alt="Laravel Logo">
+  <img src="logo.png" width="300" alt="Laravel AI Agent Logo">
 </p>
 
 <h1 align="center">Laravel AI Agent</h1>
@@ -10,7 +10,6 @@
 
 <p align="center">
   <a href="https://packagist.org/packages/alidaaer/laravel-ai-agent"><img src="https://img.shields.io/packagist/v/alidaaer/laravel-ai-agent.svg?style=flat-square" alt="Latest Version"></a>
-  <a href="https://packagist.org/packages/alidaaer/laravel-ai-agent"><img src="https://img.shields.io/packagist/dt/alidaaer/laravel-ai-agent.svg?style=flat-square" alt="Total Downloads"></a>
   <a href="https://packagist.org/packages/alidaaer/laravel-ai-agent"><img src="https://img.shields.io/packagist/l/alidaaer/laravel-ai-agent.svg?style=flat-square" alt="License"></a>
   <a href="https://php.net"><img src="https://img.shields.io/badge/php-%3E%3D8.2-8892BF.svg?style=flat-square" alt="PHP Version"></a>
   <a href="https://laravel.com"><img src="https://img.shields.io/badge/laravel-%3E%3D10.0-FF2D20.svg?style=flat-square" alt="Laravel Version"></a>
@@ -21,6 +20,8 @@
 </p>
 
 ---
+
+Laravel AI Agent is the ultimate **Laravel AI package** for building intelligent automation. Transform your Laravel app with **AI-powered agents** that can understand natural language and execute PHP methods directly. Perfect for **Laravel GPT integration**, **AI automation**, and **function calling**. This Laravel AI solution works with OpenAI, Anthropic Claude, Gemini, and more - making it the most flexible **AI assistant for Laravel**.
 
 ## ✨ Why Laravel AI Agent?
 
