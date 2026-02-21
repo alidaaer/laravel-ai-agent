@@ -43,7 +43,7 @@ Laravel AI Agent is the ultimate **Laravel AI package** for building intelligent
 ## 📦 Installation
 
 ```bash
-composer require alidaaer/laravel-ai-agent
+composer require alidaaer/laravel-ai-agent:^0.1@beta
 php artisan vendor:publish --tag=ai-agent-config
 ```
 
