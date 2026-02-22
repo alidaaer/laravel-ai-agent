@@ -370,6 +370,10 @@ class SmartSchemaGenerator
                 'description' => $config['description'] ?? $this->generateParamDescription($name),
                 'required' => $config['required'] ?? false,
             ];
+            // OpenAI requires 'items' for array types
+            if (($config['type'] ?? 'string') === 'array' && !isset($config['items'])) {
+                $parameters[$name]['items'] = ['type' => 'string'];
+            }
             if (isset($config['default'])) {
                 $parameters[$name]['default'] = $config['default'];
             }
@@ -403,6 +407,11 @@ class SmartSchemaGenerator
                 'description' => $this->generateParamDescription($paramName),
                 'required' => $typeInfo['required'] && !$typeInfo['nullable'],
             ];
+
+            // OpenAI requires 'items' for array types
+            if ($typeInfo['type'] === 'array') {
+                $parameters[$paramName]['items'] = ['type' => 'string'];
+            }
 
             if (isset($typeInfo['default'])) {
                 $parameters[$paramName]['default'] = $typeInfo['default'];

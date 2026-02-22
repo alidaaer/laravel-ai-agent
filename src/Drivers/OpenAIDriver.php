@@ -187,6 +187,10 @@ class OpenAIDriver extends AbstractDriver
                     foreach ($schema['properties'] as $propName => &$propDef) {
                         if (is_array($propDef)) {
                             $propDef = array_intersect_key($propDef, array_flip($validKeys));
+                            // OpenAI strictly requires 'items' for array types
+                            if (($propDef['type'] ?? '') === 'array' && !isset($propDef['items'])) {
+                                $propDef['items'] = ['type' => 'string'];
+                            }
                         }
                     }
                     unset($propDef);
